@@ -143,7 +143,7 @@ def print_local_max_and_min(stock, n_days, percentage):
 
 
 if __name__ == "__main__":
-    symbol = 'MSFT'
+    symbol = 'GOOGL'
     n_days = 30
     download_stock_data(symbol)
     print_local_max_and_min(symbol, n_days, 0.1)

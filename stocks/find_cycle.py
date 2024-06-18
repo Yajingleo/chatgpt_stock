@@ -143,7 +143,8 @@ def print_local_max_and_min(stock, n_days, percentage):
 
 
 if __name__ == "__main__":
-    download_stock_data('MSFT')
+    symbol = 'MSFT'
     n_days = 30
-    print_local_max_and_min('MSFT', n_days, 0.1)
-    plot_n_days_average('MSFT', n_days)
+    download_stock_data(symbol)
+    print_local_max_and_min(symbol, n_days, 0.1)
+    plot_n_days_average(symbol, n_days)

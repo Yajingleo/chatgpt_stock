@@ -2,11 +2,12 @@
 Find S&P 500 good tickers.
 """
 from datetime import datetime, timedelta
+
+import urllib
 import yfinance as yf
 import pandas as pd
 import time
 from multiprocessing import Pool, freeze_support
-import asyncio
 import numpy as np
 
 class SP500StockAnalyzer:
@@ -34,7 +35,11 @@ class SP500StockAnalyzer:
     def _get_sp500_names(self) -> pd.DataFrame:
         """Get SP500 company names from Wikipedia."""
         sp_500_url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-        return pd.read_html(sp_500_url)[0]
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        req = urllib.request.Request(sp_500_url, headers=headers)
+        response = urllib.request.urlopen(req)
+        html = response.read()
+        return pd.read_html(html)[0]
     
     def fetch_stock_data(self, stock: str) -> pd.DataFrame:
         """Fetch stock data for a single ticker."""
@@ -88,8 +93,10 @@ class SP500StockAnalyzer:
         
         top_energy = self.get_n_days_energy(all_data, lookback_days)[:30]
         bottom_energy = self.get_n_days_energy(all_data, lookback_days)[-30:]
-        
-        return top_energy, bottom_energy
+        top_return = self.get_n_days_return(all_data, lookback_days)[:30]
+        bottom_return = self.get_n_days_return(all_data, lookback_days)[-30:]
+
+        return top_energy, bottom_energy, top_return, bottom_return
 
 if __name__ == '__main__':
     freeze_support()
@@ -98,9 +105,12 @@ if __name__ == '__main__':
     analyzer = SP500StockAnalyzer(years_lookback=1)
     
     # Run analysis
-    top_energy, bottom_energy = analyzer.analyze_stocks(num_processes=10, lookback_days=10)
-    
+    top_energy, bottom_energy, top_return, bottom_return = analyzer.analyze_stocks(num_processes=10, lookback_days=10)
+
     print("\nTop 30 10D Energy:\n", top_energy)
     print("\nBottom 30 10D Energy:\n", bottom_energy)
+    print("\nTop 30 10D Return:\n", top_return)
+    print("\nBottom 30 10D Return:\n", bottom_return)
+    print("\n")
 
 

@@ -1,14 +1,40 @@
 """
 Find S&P 500 good tickers.
 """
+import argparse
 from datetime import datetime, timedelta
 
+import os
 import urllib
 import yfinance as yf
 import pandas as pd
 import time
 from multiprocessing import Pool, freeze_support
 import numpy as np
+
+def parse_args():
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(
+        description='S&P 500 Stock Energy Analysis with customizable parameters',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    
+    parser.add_argument('--lookback_days', type=int, default=10,
+                       help='Number of days to look back for analysis (default: 10)')
+    
+    parser.add_argument('--num_processes', type=int, default=10,
+                       help='Number of parallel processes for data fetching (default: 10)')
+    
+    parser.add_argument('--top_n', type=int, default=30,
+                       help='Number of top/bottom results to display (default: 30)')
+    
+    parser.add_argument('--years_lookback', type=int, default=1,
+                       help='Number of years of historical data to fetch (default: 1)')
+
+    parser.add_argument('--output_dir', type=str, default=None,
+                       help='Output directory for CSV files (optional)')
+
+    return parser.parse_args()
 
 class SP500StockAnalyzer:
     def __init__(self, years_lookback=1, n_batch=50, days_lookback=365):
@@ -20,6 +46,11 @@ class SP500StockAnalyzer:
         self.ticker_to_name = self._initialize_tickers()
         self.tickers = list(self.ticker_to_name.keys())
         
+        self.top_energy = None
+        self.bottom_energy = None
+        self.top_return = None
+        self.bottom_return = None
+
     def _initialize_tickers(self) -> dict:
         """Initialize SP500 tickers with company names."""
         sp_500_names = self._get_sp500_names()
@@ -79,7 +110,7 @@ class SP500StockAnalyzer:
         return_df["Stock"] = return_df["Ticker"].replace(self.ticker_to_name)
         return return_df.sort_values(col_name, ascending=False)
     
-    def analyze_stocks(self, num_processes=10, lookback_days=10):
+    def analyze_stocks(self, num_processes=10, lookback_days=10, top_n=30):
         """Main analysis method."""
         start_time = time.time()
         
@@ -90,27 +121,46 @@ class SP500StockAnalyzer:
         
         runtime_min = (time.time() - start_time)/60
         print(f"\nRuntime Mins: {runtime_min}")
-        
-        top_energy = self.get_n_days_energy(all_data, lookback_days)[:30]
-        bottom_energy = self.get_n_days_energy(all_data, lookback_days)[-30:]
-        top_return = self.get_n_days_return(all_data, lookback_days)[:30]
-        bottom_return = self.get_n_days_return(all_data, lookback_days)[-30:]
 
-        return top_energy, bottom_energy, top_return, bottom_return
+        self.top_energy = self.get_n_days_energy(all_data, lookback_days)[:top_n]
+        self.bottom_energy = self.get_n_days_energy(all_data, lookback_days)[-top_n:]
+        self.top_return = self.get_n_days_return(all_data, lookback_days)[:top_n]
+        self.bottom_return = self.get_n_days_return(all_data, lookback_days)[-top_n:]
+
+        return self.top_energy, self.bottom_energy, self.top_return, self.bottom_return
+    
+    def save_to_csv(self, dir: str):
+        """Save DataFrame to CSV."""
+        self.top_energy.to_csv(os.path.join(dir, "top_energy.csv"), index=False)
+        self.bottom_energy.to_csv(os.path.join(dir, "bottom_energy.csv"), index=False)
+        self.top_return.to_csv(os.path.join(dir, "top_return.csv"), index=False)
+        self.bottom_return.to_csv(os.path.join(dir, "bottom_return.csv"), index=False)
+
+        print(f"Saved to {dir}/")
 
 if __name__ == '__main__':
     freeze_support()
-    
-    # Create analyzer instance
-    analyzer = SP500StockAnalyzer(years_lookback=1)
-    
-    # Run analysis
-    top_energy, bottom_energy, top_return, bottom_return = analyzer.analyze_stocks(num_processes=10, lookback_days=10)
+    args = parse_args()
 
-    print("\nTop 30 10D Energy:\n", top_energy)
-    print("\nBottom 30 10D Energy:\n", bottom_energy)
-    print("\nTop 30 10D Return:\n", top_return)
-    print("\nBottom 30 10D Return:\n", bottom_return)
+    # Create analyzer instance
+    analyzer = SP500StockAnalyzer(years_lookback=args.years_lookback)
+
+    # Run analysis
+    top_energy, bottom_energy, top_return, bottom_return = analyzer.analyze_stocks(
+        num_processes=args.num_processes,
+        lookback_days=args.lookback_days,
+        top_n=args.top_n
+    )
+
+    if args.output_dir:
+        if not os.path.exists(args.output_dir):
+            os.makedirs(args.output_dir)
+        analyzer.save_to_csv(args.output_dir)
+
+    print(f"\nTop {args.top_n} {args.lookback_days}D Energy:\n", top_energy)
+    print(f"\nBottom {args.top_n} {args.lookback_days}D Energy:\n", bottom_energy)
+    print(f"\nTop {args.top_n} {args.lookback_days}D Return:\n", top_return)
+    print(f"\nBottom {args.top_n} {args.lookback_days}D Return:\n", bottom_return)
     print("\n")
 
 

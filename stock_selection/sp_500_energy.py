@@ -37,19 +37,20 @@ def parse_args():
     return parser.parse_args()
 
 class SP500StockAnalyzer:
-    def __init__(self, years_lookback=1, n_batch=50, days_lookback=365):
+    def __init__(self, years_lookback=1):
         self.years_lookback = years_lookback
-        self.n_batch = n_batch
-        self.days_lookback = days_lookback
         self.start_date = str((datetime.now() - timedelta(days=years_lookback * 365)).date())
         self.end_date = str(datetime.now().date())
         self.ticker_to_name = self._initialize_tickers()
         self.tickers = list(self.ticker_to_name.keys())
-        
-        self.top_energy = None
-        self.bottom_energy = None
-        self.top_return = None
-        self.bottom_return = None
+
+        self.all_data = pd.DataFrame()
+        self.recommanded_tickers = []
+
+        self.top_energy = pd.DataFrame()
+        self.bottom_energy = pd.DataFrame()
+        self.top_return = pd.DataFrame()
+        self.bottom_return = pd.DataFrame()
 
     def _initialize_tickers(self) -> dict:
         """Initialize SP500 tickers with company names."""
@@ -59,6 +60,8 @@ class SP500StockAnalyzer:
         extra_ticker_to_name = {
             "ARM": "Arm Holdings",
             "TSM": "Taiwan SemiConductor Manufacturing Company",
+            "NUKZ": "Range Nuclear Renaissance Index ETF",
+            "NLR": "VanEck Uranium and Nuclear ETF",
         }
         ticker_to_name.update(extra_ticker_to_name)
         return ticker_to_name
@@ -72,7 +75,7 @@ class SP500StockAnalyzer:
         html = response.read()
         return pd.read_html(html)[0]
     
-    def fetch_stock_data(self, stock: str) -> pd.DataFrame:
+    def _fetch_stock_data(self, stock: str) -> pd.DataFrame:
         """Fetch stock data for a single ticker."""
         try:
             print(f"Downloading: {stock}")
@@ -84,50 +87,57 @@ class SP500StockAnalyzer:
         except Exception as e:
             print(f"Error: {stock}: {e}")
     
-    def get_n_days_energy(self, all_data: pd.DataFrame, n_day: int) -> pd.DataFrame:
+    def _get_n_days_energy(self, n_day: int) -> pd.DataFrame:
         """Gets the energy in the last n days."""
         if n_day == 0:
             return pd.DataFrame()
         
-        sub_data = all_data.loc[all_data.index[-n_day:]]
+        sub_data = self.all_data.loc[self.all_data.index[-n_day:]]
         col = f'{n_day}D_Energy'
         energy_df = pd.DataFrame(sub_data.Energy.sum(), columns=[col]).reset_index()
         energy_df["Stock"] = energy_df["Ticker"].replace(self.ticker_to_name)
         energy_df.sort_values(by=[col], ascending=[False], inplace=True)
-        return energy_df
+        energy_df["Start_Date"] = sub_data.index.min()
+        return energy_df.reset_index(drop=True)
     
-    def get_n_days_return(self, all_data: pd.DataFrame, n_day: int) -> pd.DataFrame:
+    def _get_n_days_return(self, n_day: int) -> pd.DataFrame:
         """Calculate n-day returns for all stocks."""
         if n_day == 0:
             return pd.DataFrame()
-        
-        last_day_data = all_data.loc[all_data.index[-1], ["Close"]]
-        last_n_day_data = all_data.loc[all_data.index[-n_day], ["Close"]]
-        
+
+        last_day_data = self.all_data.loc[self.all_data.index[-1], ["Close"]]
+        last_n_day_data = self.all_data.loc[self.all_data.index[-n_day], ["Close"]]
+
         return_n_day = (last_day_data / last_n_day_data - 1).apply(lambda x: round(x, 2))
         col_name = f"{n_day}D_Return"
         return_df = pd.DataFrame(return_n_day, columns=[col_name]).reset_index()
         return_df["Stock"] = return_df["Ticker"].replace(self.ticker_to_name)
-        return return_df.sort_values(col_name, ascending=False)
+        return_df["Start_Date"] = self.all_data.index[-n_day]
+        return return_df.sort_values(col_name, ascending=False).reset_index(drop=True)
     
-    def analyze_stocks(self, num_processes=10, lookback_days=10, top_n=30):
+    def analyze_stocks(self, num_processes=10, lookback_days=20, top_n=30):
         """Main analysis method."""
         start_time = time.time()
         
         with Pool(num_processes) as pool:
-            df_list = pool.map(self.fetch_stock_data, self.tickers)
+            df_list = pool.map(self._fetch_stock_data, self.tickers)
         
-        all_data = pd.concat(df_list, axis=1)
+        self.all_data = pd.concat(df_list, axis=1)
         
         runtime_min = (time.time() - start_time)/60
         print(f"\nRuntime Mins: {runtime_min}")
 
-        self.top_energy = self.get_n_days_energy(all_data, lookback_days)[:top_n]
-        self.bottom_energy = self.get_n_days_energy(all_data, lookback_days)[-top_n:]
-        self.top_return = self.get_n_days_return(all_data, lookback_days)[:top_n]
-        self.bottom_return = self.get_n_days_return(all_data, lookback_days)[-top_n:]
+        self.top_energy = self._get_n_days_energy(lookback_days)[:top_n]
+        self.bottom_energy = self._get_n_days_energy(lookback_days)[-top_n:]
+        self.top_return = self._get_n_days_return(lookback_days)[:top_n]
+        self.bottom_return = self._get_n_days_return(lookback_days)[-top_n:]
+
+        self.recommanded_tickers = list(set(self.top_energy.Ticker) | set(self.top_return.Ticker))
 
         return self.top_energy, self.bottom_energy, self.top_return, self.bottom_return
+
+    def get_recommanded_tickers(self):
+        return self.recommanded_tickers
     
     def save_to_csv(self, dir: str):
         """Save DataFrame to CSV."""
@@ -161,6 +171,5 @@ if __name__ == '__main__':
     print(f"\nBottom {args.top_n} {args.lookback_days}D Energy:\n", bottom_energy)
     print(f"\nTop {args.top_n} {args.lookback_days}D Return:\n", top_return)
     print(f"\nBottom {args.top_n} {args.lookback_days}D Return:\n", bottom_return)
+    print(f"Recommanded Tickers ({len(analyzer.get_recommanded_tickers())}): {analyzer.get_recommanded_tickers()}")
     print("\n")
-
-

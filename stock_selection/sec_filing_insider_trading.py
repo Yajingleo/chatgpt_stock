@@ -53,24 +53,24 @@ class SECFilingsAnalyzer:
             print(f"Error getting 10-K for CIK {cik}: {e}")
             return None
     
-    def analyze_major_customers(self, ticker):
+    def analyze_major_customers(self, ticker) -> pd.DataFrame:
         """Extract major customer information from 10-K filings"""
         cik = self.get_company_cik(ticker)
         if not cik:
-            return None
+            return pd.DataFrame()
         
         filing_info = self.get_latest_10k(cik)
         if not filing_info:
-            return None
-        
+            return pd.DataFrame()
+
         # This is a simplified example - real implementation would need
         # more sophisticated text parsing
-        return {
-            'ticker': ticker,
-            'cik': cik,
-            'latest_10k_date': filing_info['filing_date'],
-            'major_customers_analysis': 'Would require full text analysis of 10-K'
-        }
+        return pd.DataFrame({
+            'ticker': [ticker],
+            'cik': [cik],
+            'latest_10k_date': [filing_info['filing_date']],
+            'major_customers_analysis': ['Would require full text analysis of 10-K']
+        })
 
 class InsiderTradingAnalyzer:
     """Analyze insider trading data from SEC Form 4 filings"""
@@ -80,13 +80,13 @@ class InsiderTradingAnalyzer:
             'User-Agent': 'Your Company Name your-email@company.com'
         }
     
-    def get_insider_trades(self, ticker, days_back=90):
+    def get_insider_trades(self, ticker, days_back=90) -> pd.DataFrame:
         """Get recent insider trading data"""
         # Using SEC EDGAR API for Form 4 filings
         try:
             cik = self.get_company_cik(ticker)
             if not cik:
-                return []
+                return pd.DataFrame()
             
             # Get recent Form 4 filings (insider trading)
             url = f"https://data.sec.gov/submissions/CIK{cik}.json"
@@ -109,14 +109,14 @@ class InsiderTradingAnalyzer:
                             'accession_number': filings['accessionNumber'][i],
                             'size': filings['size'][i]
                         })
-            
-            return insider_trades
-            
+
+            return pd.DataFrame(insider_trades)
+
         except Exception as e:
             print(f"Error getting insider trades for {ticker}: {e}")
-            return []
-    
-    def get_company_cik(self, ticker):
+            return pd.DataFrame()
+
+    def get_company_cik(self, ticker) -> str:
         """Get CIK for company"""
         try:
             url = f"https://www.sec.gov/files/company_tickers.json"
@@ -137,7 +137,7 @@ class InsiderTradingAnalyzer:
 class AlternativeDataSources:
     """Access alternative data sources for corporate relationships"""
     
-    def get_customer_data_sources(self):
+    def get_customer_data_sources(self) -> dict:
         """List of data sources for customer/supplier information"""
         return {
             "free_sources": [
@@ -163,8 +163,8 @@ class AlternativeDataSources:
                 "Trade publications"
             ]
         }
-    
-    def scrape_company_relationships(self, ticker):
+
+    def scrape_company_relationships(self, ticker) -> dict:
         """Example: Scrape basic company relationship data"""
         import yfinance as yf
         
@@ -183,33 +183,33 @@ class AlternativeDataSources:
             for sentence in sentences:
                 if any(keyword in sentence.lower() for keyword in customer_keywords):
                     potential_relationships.append(sentence.strip())
-            
+
             return {
-                'ticker': ticker,
-                'company_name': info.get('longName', ticker),
-                'sector': info.get('sector', 'Unknown'),
-                'business_relationships': potential_relationships
+                'ticker': [ticker],
+                'company_name': [info.get('longName', ticker)],
+                'sector': [info.get('sector', 'Unknown')],
+                'business_relationships': [potential_relationships]
             }
             
         except Exception as e:
             print(f"Error analyzing {ticker}: {e}")
-            return None
+            return pd.DataFrame()
         
 if __name__ == "__main__":
     # Example usage
-    ticker = "AAPL"
+    ticker = "AMD"
     
     sec_analyzer = SECFilingsAnalyzer()
     major_customers = sec_analyzer.analyze_major_customers(ticker)
-    print("Major Customers Analysis:", major_customers)
+    print("Major Customers Analysis: \n", major_customers, "\n")
     
     insider_analyzer = InsiderTradingAnalyzer()
     insider_trades = insider_analyzer.get_insider_trades(ticker)
-    print("Recent Insider Trades:", insider_trades)
-    
+    print("Recent Insider Trades: \n", insider_trades, "\n")
+
     alt_data = AlternativeDataSources()
     customer_data_sources = alt_data.get_customer_data_sources()
-    print("Customer Data Sources:", customer_data_sources)
-    
+    print("Customer Data Sources: \n", customer_data_sources, "\n")
+
     company_relationships = alt_data.scrape_company_relationships(ticker)
-    print("Company Relationships:", company_relationships)
+    print("Company Relationships: \n", company_relationships, "\n")

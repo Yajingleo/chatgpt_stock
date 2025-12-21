@@ -1,11 +1,9 @@
 import pandas as pd
-import requests
-from bs4 import BeautifulSoup
 import yfinance as yf
 import argparse
 import os
 
-from sp_500_energy import SP500StockAnalyzer 
+from sp_500_energy import SP500StockAnalyzer
 
 class StockNewsCrawler:
     """Fetch and display stock news from Yahoo Finance."""
@@ -52,11 +50,11 @@ class StockNewsCrawler:
 
     def save_news_to_csv(self, dirname=".", filename="stock_news.csv"):
         """Save the news DataFrame to a CSV file."""
-        file_path = os.path.join(dirname, filename)
+        filepath = os.path.join(dirname, filename)
         if not os.path.exists(dirname):
             os.makedirs(dirname)
-        self.news_df.to_csv(filename, index=False)
-        print(f"News saved to {filename}")
+        self.news_df.to_csv(filepath, index=False)
+        print(f"News saved to {filepath}")
 
 
 def parse_ticker_list(ticker_str: str) -> list[str]:
@@ -74,7 +72,7 @@ if __name__ == "__main__":
 
     # Get SP500 recommended tickers
     sp_500_analyzer = SP500StockAnalyzer()
-    sp_500_analyzer.analyze_stocks(num_processes=10, lookback_days=30, top_n=30)
+    sp_500_analyzer.analyze_stocks(lookback_days=30)
     sp_500_tickers = sp_500_analyzer.get_recommanded_tickers()
     print(f"SP500 recommended tickers: {sp_500_tickers}")
 

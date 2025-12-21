@@ -133,6 +133,7 @@ if __name__ == "__main__":
     
     # Create DataFrame
     fundamentals_df = pd.DataFrame(fundamental_data)
+    print(fundamentals_df)
     
     # Display results
     print("\n=== STOCK FUNDAMENTAL DATA ===")

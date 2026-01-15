@@ -268,7 +268,7 @@ async def main():
         
         # Save results to file
         if results.get('success'):
-            output_file = "modular_stock_analysis.json"
+            output_file = "../../output/modular_stock_analysis.json"
             with open(output_file, 'w') as f:
                 json.dump(results, f, indent=2, default=str)
             print(f"💾 Full results saved to {output_file}")

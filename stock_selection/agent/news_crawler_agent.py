@@ -15,8 +15,8 @@ import sys
 import os
 
 # Import existing functionality
-sys.path.append(os.path.join(os.path.dirname(__file__), 'stock_selection'))
-from stock_selection.stock_news_crawler import StockNewsCrawler
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from stock_news_crawler import StockNewsCrawler
 
 
 def fetch_full_article_content(url: str) -> str:

@@ -1,0 +1,13 @@
+# Core dependencies for stock analysis
+pandas>=1.5.0
+yfinance>=0.2.0
+
+# Agent framework options (choose one)
+google-adk>=0.5.0  # For Google ADK implementation
+# openai>=1.0.0    # For OpenAI-based ReAct agent
+# anthropic>=0.8.0 # For Claude-based ReAct agent
+
+# Additional useful libraries for agents
+asyncio-mqtt>=0.13.0  # For real-time data streaming
+pydantic>=2.0.0       # For data validation
+python-dotenv>=1.0.0  # For environment variable management

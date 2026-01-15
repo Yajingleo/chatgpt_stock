@@ -142,6 +142,6 @@ if __name__ == "__main__":
               f"{row['sector']:15} | {format_market_cap(row['market_cap']):>10}")
     
     # Save to CSV
-    output_file = "stock_fundamentals.csv"
+    output_file = "report/stock_fundamentals.csv"
     fundamentals_df.to_csv(output_file, index=False)
     print(f"\nData saved to {output_file}")

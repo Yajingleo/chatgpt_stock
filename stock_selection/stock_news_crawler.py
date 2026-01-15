@@ -3,7 +3,10 @@ import yfinance as yf
 import argparse
 import os
 
-from sp_500_energy import SP500StockAnalyzer
+try:
+    from sp_500_energy import SP500StockAnalyzer
+except ImportError:
+    from .sp_500_energy import SP500StockAnalyzer
 
 class StockNewsCrawler:
     """Fetch and display stock news from Yahoo Finance."""
@@ -48,7 +51,7 @@ class StockNewsCrawler:
             print("\n" + "=" * 80 + "\n")  # Separator between different stocks
         print(self.news_df)
 
-    def save_news_to_csv(self, dirname=".", filename="stock_news.csv"):
+    def save_news_to_csv(self, dirname="report", filename="stock_news.csv"):
         """Save the news DataFrame to a CSV file."""
         filepath = os.path.join(dirname, filename)
         if not os.path.exists(dirname):
@@ -81,7 +84,7 @@ if __name__ == "__main__":
     print(f"Fetching news for tickers: {all_tickers}")      
     crawler = StockNewsCrawler(all_tickers)
     crawler.get_stock_news()
-    crawler.save_news_to_csv(dirname="news_output", filename="stock_news.csv")
+    crawler.save_news_to_csv(dirname="report", filename="stock_news.csv")
 
 
     

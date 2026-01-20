@@ -1,33 +1,47 @@
-# Main BUILD file for stock analysis project (Bzlmod)
-
-load("@pip_deps//:requirements.bzl", "requirement")
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("@gazelle//:def.bzl", "gazelle")
+load("@rules_python//python:defs.bzl", "py_binary")
 
-# Gazelle configuration for auto-generation
+# Gazelle target for automatic BUILD file generation
 gazelle(
     name = "gazelle",
+    prefix = "github.com/yourusername/stock_analysis",
 )
 
-# Simple stock analysis library (minimal dependencies)
-py_library(
-    name = "simple_lib",
-    srcs = [
-        "simple_stock_agent.py",
+# Update BUILD files automatically
+gazelle(
+    name = "gazelle-update-repos",
+    args = [
+        "-from_file=go.mod",
+        "-to_macro=deps.bzl%go_dependencies",
+        "-prune",
     ],
-    deps = [
-        requirement("pandas"),
-        requirement("yfinance"),
-        requirement("requests"),
-        requirement("python-dotenv"),
-    ],
+    command = "update-repos",
+)
+
+# Python specific Gazelle rules (removed for now due to dependency issues)
+# load("@rules_python//gazelle:py_extensions.bzl", "py_gazelle")
+
+# py_gazelle(
+#     name = "py_gazelle",
+#     srcs = glob(["**/*.py"]),
+# )
+
+# Original BUILD content below this line...
+
+# Chat server launcher binary
+py_binary(
+    name = "launch_chat_server",
+    srcs = ["launch_chat_server.py"],
+    main = "launch_chat_server.py",
+    deps = ["//stock_selection/agent:adk_stock_main_agent"],
     visibility = ["//visibility:public"],
 )
 
-# Simple stock agent binary
+# Web chat server binary  
 py_binary(
-    name = "simple_agent",
-    srcs = ["simple_stock_agent.py"],
-    main = "simple_stock_agent.py",
-    deps = [":simple_lib"],
+    name = "adk_web_chat_server",
+    srcs = ["adk_web_chat_server.py"],
+    main = "adk_web_chat_server.py",
+    deps = ["//stock_selection/agent:adk_stock_main_agent"],
+    visibility = ["//visibility:public"],
 )

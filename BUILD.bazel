@@ -1,0 +1,33 @@
+# Main BUILD file for stock analysis project (Bzlmod)
+
+load("@pip_deps//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@gazelle//:def.bzl", "gazelle")
+
+# Gazelle configuration for auto-generation
+gazelle(
+    name = "gazelle",
+)
+
+# Simple stock analysis library (minimal dependencies)
+py_library(
+    name = "simple_lib",
+    srcs = [
+        "simple_stock_agent.py",
+    ],
+    deps = [
+        requirement("pandas"),
+        requirement("yfinance"),
+        requirement("requests"),
+        requirement("python-dotenv"),
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# Simple stock agent binary
+py_binary(
+    name = "simple_agent",
+    srcs = ["simple_stock_agent.py"],
+    main = "simple_stock_agent.py",
+    deps = [":simple_lib"],
+)

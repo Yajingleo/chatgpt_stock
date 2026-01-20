@@ -1,0 +1,42 @@
+###############################################################################
+# Bazel now uses Bzlmod by default to manage external dependencies.
+# Please consider migrating your external dependencies from WORKSPACE to MODULE.bazel.
+#
+# For more details, please check https://github.com/bazelbuild/bazel/issues/18958
+###############################################################################
+
+module(
+    name = "stock_analysis",
+    version = "1.0.0",
+)
+
+# Python rules
+bazel_dep(name = "rules_python", version = "0.31.0")
+
+# Configure Python toolchain
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(
+    python_version = "3.11",
+)
+
+# Python dependencies from requirements.txt
+pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+pip.parse(
+    hub_name = "pip_deps",
+    python_version = "3.11", 
+    requirements_lock = "//:requirements.txt",
+)
+use_repo(pip, "pip_deps")
+
+# Go rules
+bazel_dep(name = "rules_go", version = "0.46.0")
+bazel_dep(name = "gazelle", version = "0.35.0")
+
+# Gazelle for auto-generation
+gazelle = use_extension("@gazelle//:extensions.bzl", "gazelle")
+
+# Protocol Buffers
+bazel_dep(name = "protobuf", version = "21.7")
+
+# Build tools
+bazel_dep(name = "buildtools", version = "6.4.0")

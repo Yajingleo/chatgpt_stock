@@ -27,10 +27,10 @@ py_library(
 py_library(
     name = "adk_stock_main_agent",
     srcs = ["adk_stock_main_agent.py"],
+    visibility = ["//visibility:public"],
     deps = [
         ":news_crawler_agent",
-        ":sentiment_analyzer", 
+        ":sentiment_analyzer",
         ":stock_recommender",
     ],
-    visibility = ["//visibility:public"],
 )

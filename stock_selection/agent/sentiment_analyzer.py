@@ -39,7 +39,7 @@ def analyze_article_with_adk_llm(article_text: str, ticker: str, title: str) -> 
         As a financial analyst, analyze this news article about {ticker}:
         
         Title: {title}
-        Content: {article_text[:1500]}
+        Content: {article_text}
         
         Provide structured financial sentiment analysis focusing on:
         - Investment implications  
@@ -186,7 +186,7 @@ You are a financial analyst specializing in sentiment analysis of news articles 
 Analyze the following news article about {ticker} and provide a structured analysis:
 
 Title: {title}
-Article Content: {article_text[:2000]}...
+Article Content: {article_text}...
 
 Provide your analysis in this exact JSON format:
 {{

@@ -41,7 +41,7 @@ except ImportError:
 
 # Import the stock analysis components
 try:
-    from adk_stock_main_agent import StockNewsADKAgent
+    from adk_stock_agent_main import StockNewsADKAgent
     STOCK_AGENT_AVAILABLE = True
 except ImportError as e:
     print(f"⚠️ Stock agent import error: {e}")

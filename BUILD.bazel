@@ -1,47 +1,88 @@
-load("@gazelle//:def.bzl", "gazelle")
-load("@rules_python//python:defs.bzl", "py_binary")
+# Main BUILD file for the stock analysis project
+# Following Google BUILD file conventions
 
-# Gazelle target for automatic BUILD file generation
-gazelle(
-    name = "gazelle",
-    prefix = "github.com/yourusername/stock_analysis",
-)
+load("@pip_deps//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
-# Update BUILD files automatically
-gazelle(
-    name = "gazelle-update-repos",
-    args = [
-        "-from_file=go.mod",
-        "-to_macro=deps.bzl%go_dependencies",
-        "-prune",
+package(default_visibility = ["//visibility:public"])
+
+# Core stock analysis library
+py_library(
+    name = "stock_agent_lib",
+    srcs = [
+        "sentiment_analyzer.py",
+        "simple_stock_agent.py", 
+        "improved_voice_agent.py",
     ],
-    command = "update-repos",
-)
-
-# Python specific Gazelle rules (removed for now due to dependency issues)
-# load("@rules_python//gazelle:py_extensions.bzl", "py_gazelle")
-
-# py_gazelle(
-#     name = "py_gazelle",
-#     srcs = glob(["**/*.py"]),
-# )
-
-# Original BUILD content below this line...
-
-# Chat server launcher binary
-py_binary(
-    name = "launch_chat_server",
-    srcs = ["launch_chat_server.py"],
-    main = "launch_chat_server.py",
-    deps = ["//stock_selection/agent:adk_stock_main_agent"],
+    deps = [
+        "//stock_selection/agent:stock_agent_main",
+        requirement("pandas"),
+        requirement("yfinance"),
+        requirement("requests"), 
+        requirement("beautifulsoup4"),
+        requirement("openai"),
+        requirement("python-dotenv"),
+    ],
     visibility = ["//visibility:public"],
 )
 
-# Web chat server binary  
+# Voice-specific dependencies
+py_library(
+    name = "voice_lib",
+    srcs = ["improved_voice_agent.py"],
+    deps = [
+        ":stock_agent_lib",
+        requirement("speechrecognition"),
+        requirement("pyttsx3"),
+        # requirement("pyaudio"),  # Platform-dependent
+    ],
+)
+
+# Python binaries
 py_binary(
-    name = "adk_web_chat_server",
-    srcs = ["adk_web_chat_server.py"],
+    name = "simple_agent",
+    srcs = ["simple_stock_agent.py"],
+    main = "simple_stock_agent.py",
+    deps = [":stock_agent_lib"],
+)
+
+py_binary(
+    name = "voice_agent", 
+    srcs = ["improved_voice_agent.py"],
+    main = "improved_voice_agent.py",
+    deps = [
+        ":stock_agent_lib",
+        requirement("speechrecognition"),
+        requirement("pyttsx3"),
+    ],
+)
+
+py_binary(
+    name = "web_server",
+    srcs = ["minimal_web_server.py"],
+    main = "minimal_web_server.py",
+    deps = [":stock_agent_lib"],
+)
+
+py_binary(
+    name = "chat_server",
+    srcs = ["adk_web_chat_server.py"],  
     main = "adk_web_chat_server.py",
-    deps = ["//stock_selection/agent:adk_stock_main_agent"],
-    visibility = ["//visibility:public"],
+    deps = [":stock_agent_lib"],
+)
+
+# Test targets
+py_test(
+    name = "agent_tests",
+    srcs = [
+        "test_agent.py",
+        "test_chat_server.py", 
+        "test_import_fix.py",
+        "test_llm_analysis.py",
+        "test_openai_analysis.py",
+    ],
+    deps = [
+        ":stock_agent_lib",
+        requirement("pytest"),
+    ],
 )

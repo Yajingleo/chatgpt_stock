@@ -10,17 +10,26 @@ import json
 import logging
 from typing import List, Dict, Any
 import os
+import csv
+import pandas as pd
+from datetime import datetime
 from dotenv import load_dotenv
+
+# Import centralized logging
+from stock_agent.utils.logging_config import get_logger
 
 # Load environment variables from .env file
 load_dotenv()
+
+# Get logger instance
+logger = get_logger('stock_agent.sentiment')
 
 # Optional OpenAI import
 try:
     from openai import OpenAI
     OPENAI_AVAILABLE = True
 except ImportError:
-    print("⚠️  OpenAI not installed. LLM analysis will use simulation mode.")
+    logger.warning("OpenAI not installed. LLM analysis will use simulation mode.")
     OPENAI_AVAILABLE = False
     OpenAI = None
 
@@ -168,6 +177,7 @@ def analyze_article_with_llm(article_text: str, ticker: str, title: str) -> Dict
     try:
         # Check if OpenAI is available and API key is set
         if not OPENAI_AVAILABLE or not os.getenv('OPENAI_API_KEY'):
+            logger.info(f"Using simulation mode for {ticker} (OpenAI not available)")
             return _simulate_openai_analysis(article_text, ticker, title)
         
         # Initialize OpenAI client (loads API key from .env file)
@@ -203,7 +213,7 @@ Consider:
         # This was already handled above, so this condition shouldn't be reached
         
         # Real LLM analysis when API key is available
-        print("Sending request to OpenAI LLM for sentiment analysis...")
+        logger.info(f"Calling OpenAI GPT-3.5 for sentiment analysis", extra={'ticker': ticker})
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
@@ -213,7 +223,7 @@ Consider:
             max_tokens=500,
             temperature=0.1
         )
-        logging.info("OpenAI LLM response received.")
+        logger.info(f"OpenAI analysis complete", extra={'ticker': ticker})
         
         result_text = response.choices[0].message.content
         return json.loads(result_text)
@@ -282,6 +292,9 @@ def _simulate_openai_analysis(article_text: str, ticker: str, title: str) -> Dic
 def analyze_sentiment_tool(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
     """ADK Tool: Enhanced sentiment analysis of stock news with full content"""
     try:
+        # Initialize storage for raw OpenAI responses
+        raw_openai_responses = []
+        
         # Enhanced sentiment keywords with more financial terms
         sentiment_keywords = {
             'positive': [
@@ -310,6 +323,51 @@ def analyze_sentiment_tool(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
             # Use full content if available, otherwise fall back to summary
             full_content = item.get('EnhancedText', item.get('FullContent', '')).lower()
             analysis_text = full_content if full_content and len(full_content) > 100 else f"{title} {summary}"
+            
+            # Use LLM analysis for articles with substantial content
+            if full_content and len(full_content) > 500:
+                # Use LLM analysis for rich content
+                llm_result = analyze_article_with_llm(full_content, ticker, item.get('Title', ''))
+                
+                # Store raw OpenAI response for CSV export
+                raw_response_entry = {
+                    'timestamp': datetime.now().isoformat(),
+                    'ticker': ticker,
+                    'title': item.get('Title', ''),
+                    'link': item.get('Link', ''),
+                    'published_time': item.get('PublishedTime', ''),
+                    'sentiment_score': llm_result.get('sentiment_score', 0),
+                    'confidence': llm_result.get('confidence', 'unknown'),
+                    'key_factors': '; '.join(llm_result.get('key_factors', [])),
+                    'investment_impact': llm_result.get('investment_impact', 'neutral'),
+                    'reasoning': llm_result.get('reasoning', ''),
+                    'market_catalysts': '; '.join(llm_result.get('market_catalysts', [])),
+                    'content_length': len(full_content)
+                }
+                raw_openai_responses.append(raw_response_entry)
+                
+                if ticker not in ticker_sentiment:
+                    ticker_sentiment[ticker] = {
+                        'positive_count': 0,
+                        'negative_count': 0,
+                        'news_count': 0,
+                        'sentiment_score': 0,
+                        'content_depth': 'summary_only',
+                        'key_phrases': [],
+                        'confidence': 'low'
+                    }
+                
+                # Use LLM results
+                ticker_sentiment[ticker]['sentiment_score'] += llm_result.get('sentiment_score', 0)
+                ticker_sentiment[ticker]['news_count'] += 1
+                ticker_sentiment[ticker]['content_depth'] = 'full_article'
+                ticker_sentiment[ticker]['confidence'] = llm_result.get('confidence', 'medium')
+                
+                # Extract key factors as phrases
+                key_factors = llm_result.get('key_factors', [])
+                ticker_sentiment[ticker]['key_phrases'].extend(key_factors[:3])
+                
+                continue  # Skip keyword analysis for LLM-analyzed articles
             
             if ticker not in ticker_sentiment:
                 ticker_sentiment[ticker] = {
@@ -367,19 +425,47 @@ def analyze_sentiment_tool(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
             else:
                 ticker_sentiment[ticker]['sentiment_score'] = 0
         
+        # Save raw OpenAI responses to CSV if any were collected
+        if raw_openai_responses:
+            _save_openai_responses_to_csv(raw_openai_responses)
+        
         return {
             "success": True,
             "sentiment_analysis": ticker_sentiment,
             "analyzed_tickers": list(ticker_sentiment.keys()),
+            "openai_responses_count": len(raw_openai_responses),
             "enhancement_info": {
                 "full_content_analyzed": sum(1 for t in ticker_sentiment.values() if t['content_depth'] == 'full_article'),
                 "total_tickers": len(ticker_sentiment),
                 "avg_confidence": sum(1 for t in ticker_sentiment.values() if t['confidence'] == 'high') / len(ticker_sentiment) if ticker_sentiment else 0
             },
-            "message": f"Enhanced sentiment analysis completed for {len(ticker_sentiment)} tickers"
+            "message": f"Enhanced sentiment analysis completed for {len(ticker_sentiment)} tickers with {len(raw_openai_responses)} OpenAI responses saved to CSV"
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+def _save_openai_responses_to_csv(responses: List[Dict[str, Any]]) -> None:
+    """Save raw OpenAI responses to CSV file in the report directory"""
+    try:
+        # Create report directory path relative to current script location
+        report_dir = os.path.join(os.path.dirname(__file__), '..', 'report')
+        os.makedirs(report_dir, exist_ok=True)
+        
+        # Generate timestamped filename
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        csv_filename = f'openai_sentiment_analysis_{timestamp}.csv'
+        csv_path = os.path.join(report_dir, csv_filename)
+        
+        # Convert to DataFrame for easier CSV writing
+        df = pd.DataFrame(responses)
+        
+        # Save to CSV
+        df.to_csv(csv_path, index=False)
+        logger.info(f"Raw OpenAI responses saved to {csv_path}")
+
+    except Exception as e:
+        logger.warning(f"Failed to save OpenAI responses to CSV: {e}", exc_info=True)
 
 
 class SentimentAnalyzer:

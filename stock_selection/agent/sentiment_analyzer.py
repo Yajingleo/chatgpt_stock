@@ -15,18 +15,21 @@ import pandas as pd
 from datetime import datetime
 from dotenv import load_dotenv
 
+# Import centralized logging
+from utils.logging_config import get_logger
+
 # Load environment variables from .env file
 load_dotenv()
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Get logger instance
+logger = get_logger('stock_agent.sentiment')
 
 # Optional OpenAI import
 try:
     from openai import OpenAI
     OPENAI_AVAILABLE = True
 except ImportError:
-    print("⚠️  OpenAI not installed. LLM analysis will use simulation mode.")
+    logger.warning("OpenAI not installed. LLM analysis will use simulation mode.")
     OPENAI_AVAILABLE = False
     OpenAI = None
 
@@ -174,7 +177,7 @@ def analyze_article_with_llm(article_text: str, ticker: str, title: str) -> Dict
     try:
         # Check if OpenAI is available and API key is set
         if not OPENAI_AVAILABLE or not os.getenv('OPENAI_API_KEY'):
-            print(f"🔄 Using simulation mode for {ticker} (OpenAI not available)")
+            logger.info(f"Using simulation mode for {ticker} (OpenAI not available)")
             return _simulate_openai_analysis(article_text, ticker, title)
         
         # Initialize OpenAI client (loads API key from .env file)
@@ -210,8 +213,7 @@ Consider:
         # This was already handled above, so this condition shouldn't be reached
         
         # Real LLM analysis when API key is available
-        print(f"🤖 Calling OpenAI GPT-3.5 for sentiment analysis of {ticker}...")
-        logging.info("Sending request to OpenAI LLM for sentiment analysis...")
+        logger.info(f"Calling OpenAI GPT-3.5 for sentiment analysis", extra={'ticker': ticker})
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
@@ -221,8 +223,7 @@ Consider:
             max_tokens=500,
             temperature=0.1
         )
-        print(f"✅ OpenAI analysis complete for {ticker}")
-        logging.info("OpenAI LLM response received.")
+        logger.info(f"OpenAI analysis complete", extra={'ticker': ticker})
         
         result_text = response.choices[0].message.content
         return json.loads(result_text)
@@ -461,10 +462,10 @@ def _save_openai_responses_to_csv(responses: List[Dict[str, Any]]) -> None:
         
         # Save to CSV
         df.to_csv(csv_path, index=False)
-        print(f"💾 Raw OpenAI responses saved to {csv_path}")
-        
+        logger.info(f"Raw OpenAI responses saved to {csv_path}")
+
     except Exception as e:
-        print(f"⚠️  Failed to save OpenAI responses to CSV: {e}")
+        logger.warning(f"Failed to save OpenAI responses to CSV: {e}", exc_info=True)
 
 
 class SentimentAnalyzer:

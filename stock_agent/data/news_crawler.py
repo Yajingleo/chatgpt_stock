@@ -15,11 +15,10 @@ import sys
 import os
 
 # Import logging
-from utils.logging_config import get_logger
+from stock_agent.utils.logging_config import get_logger
 
 # Import existing functionality
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from stock_news_crawler import StockNewsCrawler
+from stock_agent.data._legacy_crawler import StockNewsCrawler
 
 # Get logger instance
 logger = get_logger('stock_agent.news_crawler')

@@ -11,8 +11,7 @@ import os
 from typing import List, Dict, Any
 
 # Import existing functionality
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from sp_500_energy import SP500StockAnalyzer
+from stock_agent.data.sp500_analyzer import SP500StockAnalyzer
 
 
 def get_sp500_recommendations_tool(lookback_days: int = 30) -> Dict[str, Any]:

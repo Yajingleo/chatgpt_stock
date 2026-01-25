@@ -43,21 +43,18 @@ from typing import Dict, Any
 from datetime import datetime
 
 # Import logging
-from utils.logging_config import get_logger
+from stock_agent.utils.logging_config import get_logger
 
 # Import our modular components
-from news_crawler_agent import (
-    fetch_stock_news_tool, 
-    create_news_crawler_tools
+from stock_agent.data.news_crawler import (
+    fetch_stock_news_tool
 )
-from sentiment_analyzer import (
-    analyze_sentiment_tool,
-    create_sentiment_analysis_tools
+from stock_agent.analysis.sentiment import (
+    analyze_sentiment_tool
 )
-from stock_recommender import (
+from stock_agent.analysis.recommender import (
     get_sp500_recommendations_tool,
-    generate_recommendations_tool,
-    create_recommendation_tools
+    generate_recommendations_tool
 )
 
 

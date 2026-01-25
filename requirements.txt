@@ -1,0 +1,33 @@
+# Stock Analysis Agent - Unified Requirements
+# Updated: 2026-01-25
+
+# Core Data Processing
+pandas==2.0.3
+numpy==1.24.3
+scipy==1.10.1
+
+# Web Scraping & HTTP
+requests==2.31.0
+beautifulsoup4==4.12.2
+
+# Financial Data
+yfinance==0.2.31
+pandas-datareader==0.10.0
+
+# Environment Configuration
+python-dotenv==1.0.0
+
+# AI/ML - OpenAI Integration (optional)
+openai==1.3.0
+
+# Visualization (optional)
+matplotlib==3.7.2
+
+# Google ADK (optional - uncomment if using Google ADK integration)
+# google-adk>=0.1.0
+
+# Development Dependencies (install with: pip install -r requirements-dev.txt)
+# pytest==7.4.0
+# black==23.3.0
+# flake8==6.0.0
+# mypy==1.5.0

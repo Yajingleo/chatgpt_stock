@@ -18,3 +18,9 @@ is as follows:
    * Give a numerical rating for BUY, HOLD, SELL
 1. **Report**: report generation in the following format
    * Stock, Long / Short Action, Liquidity Window, Target Price
+
+
+Usage:
+```
+python launch_chat_server.py
+```

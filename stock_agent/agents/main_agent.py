@@ -42,8 +42,9 @@ import json
 from typing import Dict, Any
 from datetime import datetime
 
-# Import logging
-from stock_agent.utils.logging_config import get_logger
+# Import config and logging
+from stock_agent.config import settings
+from stock_agent.utils import get_logger
 
 # Import our modular components
 from stock_agent.data.news_crawler import (
@@ -111,7 +112,10 @@ class StockNewsADKAgent:
         try:
             context = Context(
                 query=user_query or "Analyze current stock news and provide investment recommendations",
-                parameters={"lookback_days": 30, "limit": 5}
+                parameters={
+                    "lookback_days": settings.analysis.lookback_days,
+                    "limit": settings.processing.news_limit
+                }
             )
             
             result = await self.agent.run(context)
@@ -128,13 +132,18 @@ class StockNewsADKAgent:
         try:
             # Step 1: Get SP500 recommendations
             self.logger.info("Step 1: Getting S&P 500 recommendations")
-            sp500_result = get_sp500_recommendations_tool(lookback_days=30)
+            sp500_result = get_sp500_recommendations_tool(
+                lookback_days=settings.analysis.lookback_days
+            )
             if not sp500_result['success']:
                 return sp500_result
 
             # Step 2: Fetch news
             self.logger.info("Step 2: Fetching stock news")
-            news_result = fetch_stock_news_tool(sp500_result['tickers'], limit=5)
+            news_result = fetch_stock_news_tool(
+                sp500_result['tickers'],
+                limit=settings.processing.news_limit
+            )
             if not news_result['success']:
                 return news_result
 

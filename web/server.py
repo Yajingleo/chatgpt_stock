@@ -6,9 +6,10 @@ A modern web interface with natural language chat capabilities for the ADK Stock
 Features:
 - Real-time chat interface
 - Natural language processing
-- Stock analysis integration  
+- Stock analysis integration
 - WebSocket support for real-time updates
 - Modern responsive UI
+- Configurable host/port via environment
 """
 
 import asyncio
@@ -25,9 +26,16 @@ import time
 import re
 
 # Add the project paths to Python path
-project_root = Path(__file__).parent
+project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-sys.path.insert(0, str(project_root / "stock_selection" / "agent"))
+
+# Import config
+try:
+    from stock_agent.config import settings, EXCLUDED_WORDS, MAX_DISPLAY_TICKERS
+    CONFIG_AVAILABLE = True
+except ImportError:
+    CONFIG_AVAILABLE = False
+    settings = None
 
 # Web server imports
 try:
@@ -104,23 +112,22 @@ class NaturalLanguageProcessor:
         
         # Extract multiple tickers if present (only likely stock tickers)
         ticker_matches = re.findall(r'\b([A-Z]{2,5})\b', query.upper())
+
         # Filter out common false positives and English words
-        excluded_words = {
-            'GET', 'THE', 'AND', 'FOR', 'ARE', 'CAN', 'YOU', 'HOW', 'WHY', 'WHAT', 'WHO', 'WHEN', 'WHERE', 
-            'THIS', 'THAT', 'BUT', 'NOT', 'ALL', 'ANY', 'HAS', 'HIS', 'HER', 'HAD', 'HIM', 'HAS', 'HER',
-            'WAS', 'WERE', 'BEEN', 'HAVE', 'HELP', 'HELLO', 'THANK', 'THANKS', 'PLEASE', 'WILL', 'WOULD',
-            'COULD', 'SHOULD', 'MIGHT', 'MUST', 'MAY', 'GOING', 'COME', 'CAME', 'WANT', 'NEED', 'LIKE',
-            'MAKE', 'TAKE', 'GIVE', 'TELL', 'ABOUT', 'MORE', 'VERY', 'GOOD', 'WELL', 'NEW', 'OLD', 'BEST',
-            'BETTER', 'STOCK', 'DOING', 'THERE', 'THESE', 'THOSE', 'THEM', 'THEY', 'THEN', 'FROM', 'WITH',
-            'INTO', 'YOUR', 'THEIR', 'OUR', 'OUT', 'OFF', 'UP', 'DOWN', 'OVER', 'UNDER', 'ABOVE', 'BELOW',
-            'BEFORE', 'AFTER', 'DURING', 'WHILE', 'SINCE', 'UNTIL', 'SO', 'IF', 'ELSE', 'OR', 'NOR', 'YET',
-            'STILL', 'JUST', 'ONLY', 'ALSO', 'EVEN', 'THOUGH', 'ALTHOUGH', 'BECAUSE', 'SINCE', 'UNLESS',
-            'UNTIL', 'WHILE', 'WHEREAS', 'WHEREVER', 'WHENEVER', 'HOWEVER', 'WHATEVER', 'WHICHEVER',
-            'NEWS', 'MARKET', 'PRICE', 'BUY', 'SELL', 'TRADE', 'INVEST', 'IS', 'AS', 'BE', 'TO', 'OF', 'IN'
-        }
-        
+        # Use constants if available, otherwise use fallback set
+        if CONFIG_AVAILABLE:
+            excluded_upper = {w.upper() for w in EXCLUDED_WORDS}
+        else:
+            excluded_upper = {
+                'GET', 'THE', 'AND', 'FOR', 'ARE', 'CAN', 'YOU', 'HOW', 'WHY', 'WHAT', 'WHO', 'WHEN', 'WHERE',
+                'THIS', 'THAT', 'BUT', 'NOT', 'ALL', 'ANY', 'HAS', 'HIS', 'HER', 'HAD', 'HIM', 'HAS', 'HER',
+                'WAS', 'WERE', 'BEEN', 'HAVE', 'HELP', 'HELLO', 'THANK', 'THANKS', 'PLEASE', 'WILL', 'WOULD',
+                'COULD', 'SHOULD', 'MIGHT', 'MUST', 'MAY', 'GOING', 'COME', 'CAME', 'WANT', 'NEED', 'LIKE',
+                'NEWS', 'MARKET', 'PRICE', 'BUY', 'SELL', 'TRADE', 'INVEST', 'IS', 'AS', 'BE', 'TO', 'OF', 'IN'
+            }
+
         # Only include potential tickers that are not common English words
-        ticker_matches = [t for t in ticker_matches if t not in excluded_words and len(t) >= 3]
+        ticker_matches = [t for t in ticker_matches if t not in excluded_upper and len(t) >= 3]
         
         if ticker_matches:
             result['entities']['tickers'] = list(set(ticker_matches))
@@ -904,8 +911,15 @@ What would you like to analyze?
 
 class ADKWebChatServer:
     """Main web chat server class"""
-    
-    def __init__(self, host='localhost', port=8080):
+
+    def __init__(self, host=None, port=None):
+        # Use config defaults if available
+        if CONFIG_AVAILABLE and settings:
+            host = host or settings.server.host
+            port = port or settings.server.port
+        else:
+            host = host or 'localhost'
+            port = port or 8080
         self.host = host
         self.port = port
         self.stock_agent = None
@@ -979,10 +993,14 @@ class ADKWebChatServer:
 def main():
     """Main entry point"""
     import argparse
-    
+
+    # Get defaults from config if available
+    default_host = settings.server.host if CONFIG_AVAILABLE and settings else 'localhost'
+    default_port = settings.server.port if CONFIG_AVAILABLE and settings else 8080
+
     parser = argparse.ArgumentParser(description='ADK Stock Chat Server')
-    parser.add_argument('--host', default='localhost', help='Host to bind to')
-    parser.add_argument('--port', type=int, default=8080, help='Port to bind to')
+    parser.add_argument('--host', default=default_host, help=f'Host to bind to (default: {default_host})')
+    parser.add_argument('--port', type=int, default=default_port, help=f'Port to bind to (default: {default_port})')
     parser.add_argument('--no-browser', action='store_true', help="Don't open browser automatically")
     
     args = parser.parse_args()

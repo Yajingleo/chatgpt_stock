@@ -4,24 +4,35 @@ Sentiment Analysis Module
 This module handles all LLM-based sentiment analysis, content analysis,
 and scoring logic for stock news articles. It supports both OpenAI and
 Google ADK LLM backends.
+
+Features:
+- Retry logic for OpenAI API calls
+- Rate limiting to prevent API throttling
+- Configurable model parameters
 """
 
 import json
-import logging
-from typing import List, Dict, Any
-import os
 import csv
-import pandas as pd
+import os
+from typing import List, Dict, Any
 from datetime import datetime
-from dotenv import load_dotenv
 
-# Import centralized logging
-from stock_agent.utils.logging_config import get_logger
+import pandas as pd
 
-# Load environment variables from .env file
-load_dotenv()
+from stock_agent.config import (
+    settings,
+    POSITIVE_KEYWORDS,
+    NEGATIVE_KEYWORDS,
+    RISK_KEYWORDS,
+    CONFIDENCE_THRESHOLDS,
+    IMPACT_THRESHOLDS,
+    SENTIMENT_SCALE_FACTOR,
+    RISK_WEIGHT_MULTIPLIER,
+    MAX_KEY_FACTORS,
+    MAX_THEMES_PER_GROUP,
+)
+from stock_agent.utils import get_logger, retry, get_rate_limiter, RetryError
 
-# Get logger instance
 logger = get_logger('stock_agent.sentiment')
 
 # Optional OpenAI import
@@ -35,14 +46,18 @@ except ImportError:
 
 
 def analyze_article_with_adk_llm(article_text: str, ticker: str, title: str) -> Dict[str, Any]:
-    """Use Google ADK's built-in LLM for sentiment analysis"""
+    """Use Google ADK's built-in LLM for sentiment analysis."""
     try:
+        # Truncate content to configured max length
+        max_content = settings.content.max_llm_content_length
+        truncated_content = article_text[:max_content]
+
         # Use Google ADK's native language processing capabilities
         analysis_prompt = f"""
         As a financial analyst, analyze this news article about {ticker}:
-        
+
         Title: {title}
-        Content: {article_text[:1500]}
+        Content: {truncated_content}
         
         Provide structured financial sentiment analysis focusing on:
         - Investment implications  
@@ -173,23 +188,28 @@ def simulate_llm_response_to_prompt(prompt: str, article_text: str, ticker: str,
 
 
 def analyze_article_with_llm(article_text: str, ticker: str, title: str) -> Dict[str, Any]:
-    """Use LLM to analyze article sentiment and extract key insights"""
+    """Use LLM to analyze article sentiment and extract key insights."""
     try:
         # Check if OpenAI is available and API key is set
-        if not OPENAI_AVAILABLE or not os.getenv('OPENAI_API_KEY'):
+        api_key = settings.openai.api_key or os.getenv('OPENAI_API_KEY')
+        if not OPENAI_AVAILABLE or not api_key:
             logger.info(f"Using simulation mode for {ticker} (OpenAI not available)")
             return _simulate_openai_analysis(article_text, ticker, title)
-        
-        # Initialize OpenAI client (loads API key from .env file)
-        client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
-        
+
+        # Initialize OpenAI client
+        client = OpenAI(api_key=api_key)
+
+        # Truncate content to configured max length
+        max_content = settings.content.max_llm_content_length
+        truncated_content = article_text[:max_content]
+
         prompt = f"""
 You are a financial analyst specializing in sentiment analysis of news articles for stock investment decisions.
 
 Analyze the following news article about {ticker} and provide a structured analysis:
 
 Title: {title}
-Article Content: {article_text[:2000]}...
+Article Content: {truncated_content}...
 
 Provide your analysis in this exact JSON format:
 {{
@@ -208,26 +228,13 @@ Consider:
 - Industry trends and competitive positioning
 - Regulatory and economic factors
 """
-        
-        # For demo purposes, if no OpenAI available, return simulated LLM analysis
-        # This was already handled above, so this condition shouldn't be reached
-        
-        # Real LLM analysis when API key is available
-        logger.info(f"Calling OpenAI GPT-3.5 for sentiment analysis", extra={'ticker': ticker})
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a professional financial analyst."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=500,
-            temperature=0.1
-        )
-        logger.info(f"OpenAI analysis complete", extra={'ticker': ticker})
-        
-        result_text = response.choices[0].message.content
-        return json.loads(result_text)
-        
+
+        # Call OpenAI with retry logic and rate limiting
+        return _call_openai_with_retry(client, prompt, ticker)
+
+    except RetryError as e:
+        logger.error(f"OpenAI API failed after retries for {ticker}: {e}")
+        return _simulate_openai_analysis(article_text, ticker, title)
     except Exception as e:
         # Fallback analysis
         return {
@@ -238,6 +245,35 @@ Consider:
             "reasoning": f"LLM analysis failed: {str(e)[:100]}",
             "market_catalysts": ["Manual review needed"]
         }
+
+
+@retry(
+    max_attempts=3,
+    base_delay=1.0,
+    retryable_exceptions=(Exception,)
+)
+def _call_openai_with_retry(client, prompt: str, ticker: str) -> Dict[str, Any]:
+    """Call OpenAI API with retry logic and rate limiting."""
+    # Rate limit OpenAI API calls
+    limiter = get_rate_limiter('openai')
+    limiter.acquire()
+
+    logger.info(f"Calling OpenAI {settings.openai.model} for sentiment analysis", extra={'ticker': ticker})
+
+    response = client.chat.completions.create(
+        model=settings.openai.model,
+        messages=[
+            {"role": "system", "content": "You are a professional financial analyst."},
+            {"role": "user", "content": prompt}
+        ],
+        max_tokens=settings.openai.max_tokens,
+        temperature=settings.openai.temperature
+    )
+
+    logger.info(f"OpenAI analysis complete", extra={'ticker': ticker})
+
+    result_text = response.choices[0].message.content
+    return json.loads(result_text)
 
 
 def _simulate_openai_analysis(article_text: str, ticker: str, title: str) -> Dict[str, Any]:

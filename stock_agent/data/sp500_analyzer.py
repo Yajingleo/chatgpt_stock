@@ -1,15 +1,30 @@
 """
-Find S&P 500 good tickers.
+S&P 500 Stock Analyzer
+
+Analyzes S&P 500 stocks based on energy (price movement * volume) and returns.
+Uses caching to avoid repeated API calls for ticker list.
 """
 import argparse
 from datetime import datetime, timedelta
-
 import os
 import urllib
-import yfinance as yf
-import pandas as pd
 import time
 from multiprocessing import Pool, freeze_support
+from typing import Optional
+
+import pandas as pd
+import yfinance as yf
+
+from stock_agent.config import (
+    settings,
+    SP500_WIKIPEDIA_URL,
+    EXTRA_TICKERS,
+    LIQUIDITY_HORIZONS,
+)
+from stock_agent.utils import get_logger, get_cache
+
+logger = get_logger('stock_agent.sp500_analyzer')
+
 
 def parse_args():
     """Parse command-line arguments."""
@@ -17,28 +32,52 @@ def parse_args():
         description='S&P 500 Stock Energy Analysis with customizable parameters',
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    
-    parser.add_argument('--lookback_days', type=int, default=10,
-                       help='Number of days to look back for analysis (default: 10)')
-    
-    parser.add_argument('--num_processes', type=int, default=10,
-                       help='Number of parallel processes for data fetching (default: 10)')
-    
-    parser.add_argument('--top_n', type=int, default=30,
-                       help='Number of top/bottom results to display (default: 30)')
-    
-    parser.add_argument('--years_lookback', type=int, default=1,
-                       help='Number of years of historical data to fetch (default: 1)')
 
-    parser.add_argument('--output_dir', type=str, default=None,
-                       help='Output directory for CSV files (optional)')
+    parser.add_argument(
+        '--lookback_days', type=int,
+        default=settings.analysis.lookback_days,
+        help=f'Number of days to look back for analysis (default: {settings.analysis.lookback_days})'
+    )
+
+    parser.add_argument(
+        '--num_processes', type=int,
+        default=settings.processing.num_processes,
+        help=f'Number of parallel processes for data fetching (default: {settings.processing.num_processes})'
+    )
+
+    parser.add_argument(
+        '--top_n', type=int,
+        default=settings.analysis.top_n_results,
+        help=f'Number of top/bottom results to display (default: {settings.analysis.top_n_results})'
+    )
+
+    parser.add_argument(
+        '--years_lookback', type=int,
+        default=settings.analysis.years_lookback,
+        help=f'Number of years of historical data to fetch (default: {settings.analysis.years_lookback})'
+    )
+
+    parser.add_argument(
+        '--output_dir', type=str, default=None,
+        help='Output directory for CSV files (optional)'
+    )
 
     return parser.parse_args()
 
+
 class SP500StockAnalyzer:
-    def __init__(self, years_lookback=1):
-        self.years_lookback = years_lookback
-        self.start_date = str((datetime.now() - timedelta(days=years_lookback * 365)).date())
+    """Analyzes S&P 500 stocks based on energy and returns."""
+
+    def __init__(self, years_lookback: Optional[int] = None):
+        """
+        Initialize the analyzer.
+
+        Args:
+            years_lookback: Number of years of historical data to fetch.
+                           Defaults to settings.analysis.years_lookback.
+        """
+        self.years_lookback = years_lookback or settings.analysis.years_lookback
+        self.start_date = str((datetime.now() - timedelta(days=self.years_lookback * 365)).date())
         self.end_date = str(datetime.now().date())
         self.ticker_to_name = self._initialize_tickers()
         self.tickers = list(self.ticker_to_name.keys())
@@ -51,66 +90,86 @@ class SP500StockAnalyzer:
         self.bottom_energy = None
         self.top_return = None
         self.bottom_return = None
-        
-        self.liquidity_horizons = [5, 10, 20, 30, 40, 60, 120]
-        
+
+        self.liquidity_horizons = LIQUIDITY_HORIZONS
+
         self._load_stock_data()
-    
-    def _load_stock_data(self, num_processes=10):
-        print("\nStart downloading stock data")
+
+    def _load_stock_data(self, num_processes: Optional[int] = None):
+        """Load stock data using parallel processing."""
+        num_processes = num_processes or settings.processing.num_processes
+        logger.info("Starting stock data download")
         start_time = time.time()
-        
+
         with Pool(num_processes) as pool:
             df_list = pool.map(self._fetch_stock_data, self.tickers)
-        
+
         self.all_data = pd.concat(df_list, axis=1)
-        
-        runtime_min = (time.time() - start_time)/60
-        print(f"\nRuntime Mins: {runtime_min}")
-        
+
+        runtime_min = (time.time() - start_time) / 60
+        logger.info(f"Stock data download completed in {runtime_min:.2f} minutes")
 
     def _initialize_tickers(self) -> dict:
         """Initialize SP500 tickers with company names."""
         sp_500_names = self._get_sp500_names()
         ticker_to_name = dict(zip(sp_500_names['Symbol'], sp_500_names["Security"]))
-        
-        extra_ticker_to_name = {
-            "ARM": "Arm Holdings",
-            "TSM": "Taiwan SemiConductor Manufacturing Company",
-            "NUKZ": "Range Nuclear Renaissance Index ETF",
-            "NLR": "VanEck Uranium and Nuclear ETF",
-        }
-        ticker_to_name.update(extra_ticker_to_name)
+
+        # Add extra tickers from config
+        ticker_to_name.update(EXTRA_TICKERS)
         return ticker_to_name
-    
+
     def _get_sp500_names(self) -> pd.DataFrame:
-        """Get SP500 company names from Wikipedia."""
-        sp_500_url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+        """Get SP500 company names from Wikipedia with caching."""
+        cache = get_cache()
+        cache_key = 'sp500_ticker_list'
+
+        # Check if caching is enabled
+        if settings.cache.enabled:
+            cached_data = cache.get(cache_key)
+            if cached_data is not None:
+                logger.debug("Using cached S&P 500 ticker list")
+                return pd.DataFrame(cached_data)
+
+        # Fetch from Wikipedia
+        logger.info("Fetching S&P 500 ticker list from Wikipedia")
         headers = {'User-Agent': 'Mozilla/5.0'}
-        req = urllib.request.Request(sp_500_url, headers=headers)
+        req = urllib.request.Request(SP500_WIKIPEDIA_URL, headers=headers)
         response = urllib.request.urlopen(req)
         html = response.read()
         df = pd.read_html(html)[0]
-        print(f"loading sp500 names: \n {df}")
+
+        logger.info(f"Loaded {len(df)} S&P 500 companies")
+
+        # Cache the result
+        if settings.cache.enabled:
+            cache.set(cache_key, df.to_dict('records'), ttl=settings.cache.sp500_ttl)
+            logger.debug(f"Cached S&P 500 ticker list (TTL: {settings.cache.sp500_ttl}s)")
+
         return df
-    
+
     def _fetch_stock_data(self, stock: str) -> pd.DataFrame:
         """Fetch stock data for a single ticker."""
         try:
-            print(f"Downloading: {stock}")
-            data = yf.download(stock, start=self.start_date, end=self.end_date, 
-                             auto_adjust=None)
+            logger.debug(f"Downloading: {stock}")
+            data = yf.download(
+                stock,
+                start=self.start_date,
+                end=self.end_date,
+                auto_adjust=None,
+                progress=False
+            )
             data[("DailyReturn", stock)] = data.Close - data.Close.shift(1)
             data[("Energy", stock)] = data.DailyReturn * data.Volume
             return data.fillna(0)
         except Exception as e:
-            print(f"Error: {stock}: {e}")
-    
+            logger.error(f"Error fetching {stock}: {e}")
+            return pd.DataFrame()
+
     def _get_n_days_energy(self, n_day: int) -> pd.DataFrame:
         """Gets the energy in the last n days."""
         if n_day == 0:
             return pd.DataFrame()
-        
+
         sub_data = self.all_data.loc[self.all_data.index[-n_day:]]
         col = f'{n_day}D_Energy'
         energy_df = pd.DataFrame(sub_data.Energy.sum(), columns=[col]).reset_index()
@@ -118,7 +177,7 @@ class SP500StockAnalyzer:
         energy_df.sort_values(by=[col], ascending=[False], inplace=True)
         energy_df["Start_Date"] = sub_data.index.min()
         return energy_df.reset_index(drop=True)
-    
+
     def _get_n_days_return(self, n_day: int) -> pd.DataFrame:
         """Calculate n-day returns for all stocks."""
         if n_day == 0:
@@ -133,9 +192,22 @@ class SP500StockAnalyzer:
         return_df["Stock"] = return_df["Ticker"].replace(self.ticker_to_name)
         return_df["Start_Date"] = self.all_data.index[-n_day]
         return return_df.sort_values(col_name, ascending=False).reset_index(drop=True)
-    
-    def analyze_stocks(self, lookback_days=20, top_n=30):
-        """Main analysis method."""
+
+    def analyze_stocks(
+        self,
+        lookback_days: Optional[int] = None,
+        top_n: Optional[int] = None
+    ):
+        """
+        Main analysis method.
+
+        Args:
+            lookback_days: Number of days to analyze. Defaults to config value.
+            top_n: Number of top results. Defaults to config value.
+        """
+        lookback_days = lookback_days or settings.analysis.lookback_days
+        top_n = top_n or settings.analysis.top_n_results
+
         self.top_energy = self._get_n_days_energy(lookback_days)[:top_n]
         self.bottom_energy = self._get_n_days_energy(lookback_days)[-top_n:]
         self.top_return = self._get_n_days_return(lookback_days)[:top_n]
@@ -144,28 +216,33 @@ class SP500StockAnalyzer:
         self.recommanded_tickers = list(set(self.top_energy.Ticker) | set(self.top_return.Ticker))
 
         return self.top_energy, self.bottom_energy, self.top_return, self.bottom_return
-    
-    def persistent_strong_momentum(self, top_n=30, horizon_days: int = 120) -> set:
-        """Returns the top energy stocks within all the previous liquidity horizons upto half year"""
+
+    def persistent_strong_momentum(
+        self,
+        top_n: Optional[int] = None,
+        horizon_days: int = 120
+    ) -> list:
+        """Returns the top energy stocks within all the previous liquidity horizons up to half year."""
+        top_n = top_n or settings.analysis.top_n_results
         top_energy_stocks = None
         top_return_stocks = None
-        
+
         for liquidity in sorted(self.liquidity_horizons):
             if liquidity > horizon_days:
                 break
-            
+
             top_energy_cand = set(self._get_n_days_energy(liquidity)["Ticker"][:top_n])
             top_energy_stocks = top_energy_stocks & top_energy_cand if top_energy_stocks else top_energy_cand
-            
+
             top_return_cand = set(self._get_n_days_return(liquidity)["Ticker"][:top_n])
             top_return_stocks = top_return_stocks & top_return_cand if top_return_stocks else top_return_cand
-            
-        return list(top_energy_stocks | top_return_stocks)
-        
+
+        return list(top_energy_stocks | top_return_stocks) if top_energy_stocks and top_return_stocks else []
 
     def get_recommanded_tickers(self):
+        """Get recommended tickers from analysis."""
         return self.recommanded_tickers
-    
+
     def save_to_csv(self, dir: str):
         """Save DataFrame to CSV."""
         self.top_energy.to_csv(os.path.join(dir, "top_energy.csv"), index=False)
@@ -173,7 +250,8 @@ class SP500StockAnalyzer:
         self.top_return.to_csv(os.path.join(dir, "top_return.csv"), index=False)
         self.bottom_return.to_csv(os.path.join(dir, "bottom_return.csv"), index=False)
 
-        print(f"Saved to {dir}/")
+        logger.info(f"Analysis results saved to {dir}/")
+
 
 if __name__ == '__main__':
     freeze_support()
@@ -188,7 +266,6 @@ if __name__ == '__main__':
         top_n=args.top_n
     )
 
-
     if args.output_dir:
         if not os.path.exists(args.output_dir):
             os.makedirs(args.output_dir)
@@ -198,56 +275,6 @@ if __name__ == '__main__':
     print(f"\nBottom {args.top_n} {args.lookback_days}D Energy:\n", bottom_energy)
     print(f"\nTop {args.top_n} {args.lookback_days}D Return:\n", top_return)
     print(f"\nBottom {args.top_n} {args.lookback_days}D Return:\n", bottom_return)
-    print(f"Recommanded Tickers ({len(analyzer.get_recommanded_tickers())}): {analyzer.get_recommanded_tickers()}")
+    print(f"Recommended Tickers ({len(analyzer.get_recommanded_tickers())}): {analyzer.get_recommanded_tickers()}")
     print(f"Persistent strong stocks: {analyzer.persistent_strong_momentum()}")
     print("\n")
-    
-    
-
-    
-# import numpy as np
-# import pandas as pd
-# from sklearn.linear_model import LinearRegression
-# import matplotlib.pyplot as plt
-
-# # 1. Generate dummy time series data
-# np.random.seed(42)
-# dates = pd.date_range(start='2023-01-01', periods=100)
-# values = np.linspace(0, 10, 100) + np.random.normal(0, 1, 100) # Linear trend + noise
-# df = pd.DataFrame({'date': dates, 'value': values})
-# df.set_index('date', inplace=True)
-
-# # 2. Feature Engineering: Create Lag Features
-# # We want to predict 'value' at time t using 'value' at time t-1
-# df['lag_1'] = df['value'].shift(1)
-# df['lag_2'] = df['value'].shift(2)
-
-# # Drop NaN values created by shifting
-# df.dropna(inplace=True)
-
-# # 3. Prepare Data for Scikit-Learn
-# X = df[['lag_1', 'lag_2']]  # Features (Past values)
-# y = df['value']             # Target (Current value)
-
-# # Split data (Respecting time order, do NOT shuffle)
-# train_size = int(len(df) * 0.8)
-# X_train, X_test = X.iloc[:train_size], X.iloc[train_size:]
-# y_train, y_test = y.iloc[:train_size], y.iloc[train_size:]
-
-# # 4. Train Linear Regression Model
-# model = LinearRegression()
-# model.fit(X_train, y_train)
-
-# # 5. Make Predictions
-# predictions = model.predict(X_test)
-
-# # Plotting
-# plt.figure(figsize=(10, 5))
-# plt.plot(y_test.index, y_test, label='Actual')
-# plt.plot(y_test.index, predictions, label='Predicted', linestyle='--')
-# plt.legend()
-# plt.title("Linear Regression for Time Series (Autoregression)")
-# plt.show()
-
-# print(f"Coefficients: {model.coef_}")
-# print(f"Intercept: {model.intercept_}")

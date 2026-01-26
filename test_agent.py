@@ -6,8 +6,8 @@ import asyncio
 import sys
 import os
 
-# Add the stock_selection directory to path
-sys.path.append(os.path.join(os.path.dirname(__file__), 'stock_selection'))
+# Add the project root to path
+sys.path.append(os.path.dirname(__file__))
 
 # Test basic functionality
 def test_basic_functionality():
@@ -15,10 +15,10 @@ def test_basic_functionality():
     print("🧪 Testing basic imports...")
     
     try:
-        from stock_selection.sp_500_energy import SP500StockAnalyzer
+        from stock_agent.data.sp500_analyzer import SP500StockAnalyzer
         print("✅ SP500StockAnalyzer imported successfully")
-        
-        from stock_selection.stock_news_crawler import StockNewsCrawler  
+
+        from stock_agent.data._legacy_crawler import StockNewsCrawler
         print("✅ StockNewsCrawler imported successfully")
         
         return True
@@ -31,8 +31,8 @@ def test_sp500_analyzer():
     print("\n📊 Testing SP500 analyzer...")
     
     try:
-        from stock_selection.sp_500_energy import SP500StockAnalyzer
-        
+        from stock_agent.data.sp500_analyzer import SP500StockAnalyzer
+
         analyzer = SP500StockAnalyzer(years_lookback=1)
         print(f"✅ Created analyzer with {len(analyzer.tickers)} tickers")
         
@@ -48,8 +48,8 @@ def test_news_crawler():
     print("\n📰 Testing news crawler...")
     
     try:
-        from stock_selection.stock_news_crawler import StockNewsCrawler
-        
+        from stock_agent.data._legacy_crawler import StockNewsCrawler
+
         # Test with just one ticker to avoid rate limits
         test_tickers = ["AAPL"]
         crawler = StockNewsCrawler(test_tickers)

@@ -6,11 +6,14 @@ Uses caching to avoid repeated API calls for ticker list.
 """
 import argparse
 from datetime import datetime, timedelta
+import logging
 import os
 import urllib
 import time
-from multiprocessing import Pool, freeze_support
 from typing import Optional
+
+# Suppress yfinance internal error messages
+logging.getLogger('yfinance').setLevel(logging.CRITICAL)
 
 import pandas as pd
 import yfinance as yf
@@ -62,25 +65,36 @@ def parse_args():
         help='Output directory for CSV files (optional)'
     )
 
+    parser.add_argument(
+        '--num_stocks_to_test', type=int, default=None,
+        help='Limit number of stocks to test (for debugging)'
+    )
+
     return parser.parse_args()
 
 
 class SP500StockAnalyzer:
     """Analyzes S&P 500 stocks based on energy and returns."""
 
-    def __init__(self, years_lookback: Optional[int] = None):
+    def __init__(self, years_lookback: Optional[int] = None, num_stocks_to_test: Optional[int] = None):
         """
         Initialize the analyzer.
 
         Args:
             years_lookback: Number of years of historical data to fetch.
                            Defaults to settings.analysis.years_lookback.
+            num_stocks_to_test: Limit number of stocks for testing.
         """
         self.years_lookback = years_lookback or settings.analysis.years_lookback
         self.start_date = str((datetime.now() - timedelta(days=self.years_lookback * 365)).date())
         self.end_date = str(datetime.now().date())
         self.ticker_to_name = self._initialize_tickers()
         self.tickers = list(self.ticker_to_name.keys())
+        
+        # Limit tickers for testing if specified
+        if num_stocks_to_test and num_stocks_to_test > 0:
+            self.tickers = self.tickers[:num_stocks_to_test]
+            logger.info(f"Testing mode: Processing only {len(self.tickers)} stocks")
 
         self.all_data = None
         self.recommanded_tickers = None
@@ -95,16 +109,44 @@ class SP500StockAnalyzer:
 
         self._load_stock_data()
 
-    def _load_stock_data(self, num_processes: Optional[int] = None):
-        """Load stock data using parallel processing."""
-        num_processes = num_processes or settings.processing.num_processes
-        logger.info("Starting stock data download")
+    def _load_stock_data(self):
+        """Load stock data for all tickers in a single API call."""
+        logger.info(f"Starting stock data download for {len(self.tickers)} stocks")
         start_time = time.time()
 
-        with Pool(num_processes) as pool:
-            df_list = pool.map(self._fetch_stock_data, self.tickers)
+        data = yf.download(
+            self.tickers,
+            start=self.start_date,
+            end=self.end_date,
+            auto_adjust=True,
+            progress=True,
+            ignore_tz=True  # Prevents "No timezone found" errors
+        )
 
-        self.all_data = pd.concat(df_list, axis=1)
+        if data.empty:
+            raise ValueError("No stock data downloaded")
+
+        # Print raw data for debugging
+        print(f"\n=== Raw Downloaded Data ===")
+        print(f"Shape: {data.shape}")
+        print(data.head(10))
+        print(f"===========================\n")
+
+        # Filter tickers to only those successfully downloaded
+        downloaded_tickers = []
+        for ticker in self.tickers:
+            if ("Close", ticker) in data.columns:
+                downloaded_tickers.append(ticker)
+                data[("DailyReturn", ticker)] = data[("Close", ticker)] - data[("Close", ticker)].shift(1)
+                data[("Energy", ticker)] = data[("DailyReturn", ticker)] * data[("Volume", ticker)]
+
+        # Update tickers list to only include successful downloads
+        failed_count = len(self.tickers) - len(downloaded_tickers)
+        if failed_count > 0:
+            logger.warning(f"Failed to download {failed_count} tickers, continuing with {len(downloaded_tickers)}")
+        self.tickers = downloaded_tickers
+
+        self.all_data = data.fillna(0)
 
         runtime_min = (time.time() - start_time) / 60
         logger.info(f"Stock data download completed in {runtime_min:.2f} minutes")
@@ -146,24 +188,6 @@ class SP500StockAnalyzer:
             logger.debug(f"Cached S&P 500 ticker list (TTL: {settings.cache.sp500_ttl}s)")
 
         return df
-
-    def _fetch_stock_data(self, stock: str) -> pd.DataFrame:
-        """Fetch stock data for a single ticker."""
-        try:
-            logger.debug(f"Downloading: {stock}")
-            data = yf.download(
-                stock,
-                start=self.start_date,
-                end=self.end_date,
-                auto_adjust=None,
-                progress=False
-            )
-            data[("DailyReturn", stock)] = data.Close - data.Close.shift(1)
-            data[("Energy", stock)] = data.DailyReturn * data.Volume
-            return data.fillna(0)
-        except Exception as e:
-            logger.error(f"Error fetching {stock}: {e}")
-            return pd.DataFrame()
 
     def _get_n_days_energy(self, n_day: int) -> pd.DataFrame:
         """Gets the energy in the last n days."""
@@ -254,11 +278,13 @@ class SP500StockAnalyzer:
 
 
 if __name__ == '__main__':
-    freeze_support()
     args = parse_args()
 
     # Create analyzer instance
-    analyzer = SP500StockAnalyzer(years_lookback=args.years_lookback)
+    analyzer = SP500StockAnalyzer(
+        years_lookback=args.years_lookback,
+        num_stocks_to_test=args.num_stocks_to_test
+    )
 
     # Run analysis
     top_energy, bottom_energy, top_return, bottom_return = analyzer.analyze_stocks(

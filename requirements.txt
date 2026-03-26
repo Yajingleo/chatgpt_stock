@@ -11,7 +11,7 @@ requests==2.31.0
 beautifulsoup4==4.12.2
 
 # Financial Data
-yfinance==0.2.31
+yfinance>=0.2.66
 pandas-datareader==0.10.0
 
 # Environment Configuration

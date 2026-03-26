@@ -48,6 +48,9 @@ report/
 .DS_Store
 Thumbs.db
 
+# Cache
+.cache/
+
 # Testing
 .pytest_cache/
 .coverage

@@ -328,9 +328,11 @@ def _simulate_openai_analysis(article_text: str, ticker: str, title: str) -> Dic
 def analyze_sentiment_tool(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
     """ADK Tool: Enhanced sentiment analysis of stock news with full content"""
     try:
+        logger.info(f"Starting sentiment analysis for {len(news_data)} articles")
+
         # Initialize storage for raw OpenAI responses
         raw_openai_responses = []
-        
+
         # Enhanced sentiment keywords with more financial terms
         sentiment_keywords = {
             'positive': [
@@ -351,18 +353,23 @@ def analyze_sentiment_tool(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         
         ticker_sentiment = {}
         
-        for item in news_data:
+        total_articles = len(news_data)
+        for idx, item in enumerate(news_data, 1):
             ticker = item.get('Ticker', 'UNKNOWN')
             title = item.get('Title', '').lower()
             summary = item.get('Summary', '').lower()
-            
+
+            # Log progress for each article
+            logger.info(f"[{idx}/{total_articles}] Analyzing {ticker}: {item.get('Title', '')[:50]}...")
+
             # Use full content if available, otherwise fall back to summary
             full_content = item.get('EnhancedText', item.get('FullContent', '')).lower()
             analysis_text = full_content if full_content and len(full_content) > 100 else f"{title} {summary}"
-            
+
             # Use LLM analysis for articles with substantial content
             if full_content and len(full_content) > 500:
                 # Use LLM analysis for rich content
+                logger.debug(f"  Using LLM analysis for {ticker} (content length: {len(full_content)})")
                 llm_result = analyze_article_with_llm(full_content, ticker, item.get('Title', ''))
                 
                 # Store raw OpenAI response for CSV export

@@ -97,10 +97,34 @@ def get_logger(name: str = 'stock_agent') -> logging.Logger:
 
     # If logger doesn't have handlers, set it up
     if not logger.handlers:
-        setup_logger(name)
+        # Read log level from settings
+        try:
+            from stock_agent.config import settings
+            level_str = settings.logging.level.upper()
+            level = getattr(logging, level_str, logging.INFO)
+        except (ImportError, AttributeError):
+            level = logging.INFO
+        
+        setup_logger(name, level=level)
 
     return logger
 
 
 # Set up default logger on module import
-default_logger = setup_logger()
+try:
+    from stock_agent.config import settings
+    level_str = settings.logging.level.upper()
+    default_level = getattr(logging, level_str, logging.INFO)
+except (ImportError, AttributeError):
+    default_level = logging.INFO
+
+default_logger = setup_logger(level=default_level)
+
+# Suppress DEBUG logs from noisy third-party libraries
+# These libraries can be very verbose at DEBUG level
+logging.getLogger('yfinance').setLevel(logging.WARNING)
+logging.getLogger('peewee').setLevel(logging.WARNING)
+logging.getLogger('urllib3').setLevel(logging.WARNING)
+logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
+logging.getLogger('requests').setLevel(logging.WARNING)
+logging.getLogger('charset_normalizer').setLevel(logging.WARNING)

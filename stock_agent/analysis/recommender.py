@@ -12,6 +12,9 @@ from typing import List, Dict, Any, Optional
 
 from stock_agent.config import settings, MAX_KEY_PHRASES, MAX_INSIGHTS
 from stock_agent.data.sp500_analyzer import SP500StockAnalyzer
+from stock_agent.utils import get_logger
+
+logger = get_logger('stock_agent.recommender')
 
 
 def get_sp500_recommendations_tool(lookback_days: Optional[int] = None) -> Dict[str, Any]:
@@ -27,9 +30,11 @@ def get_sp500_recommendations_tool(lookback_days: Optional[int] = None) -> Dict[
     lookback_days = lookback_days or settings.analysis.lookback_days
 
     try:
+        logger.info(f"Analyzing S&P 500 stocks (lookback: {lookback_days} days)")
         analyzer = SP500StockAnalyzer()
         analyzer.analyze_stocks(lookback_days=lookback_days)
         tickers = analyzer.get_recommanded_tickers()
+        logger.info(f"Found {len(tickers)} recommended tickers")
         return {
             "success": True,
             "tickers": tickers,
@@ -37,6 +42,7 @@ def get_sp500_recommendations_tool(lookback_days: Optional[int] = None) -> Dict[
             "message": f"Retrieved {len(tickers)} recommended tickers"
         }
     except Exception as e:
+        logger.error(f"Error analyzing S&P 500: {e}")
         return {"success": False, "error": str(e)}
 
 

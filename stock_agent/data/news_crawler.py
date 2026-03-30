@@ -178,11 +178,14 @@ class NewsContentEnhancer:
         """
         max_items = max_items or settings.processing.max_articles_to_enhance
         enhanced_news = []
+        total_items = min(len(news_data), max_items)
+        logger.info(f"Enhancing {total_items} articles with full content")
 
-        for item in news_data[:max_items]:
+        for idx, item in enumerate(news_data[:max_items], 1):
             url = item.get('Link', '')
+            ticker = item.get('Ticker', 'UNKNOWN')
             if url and url != 'No link':
-                logger.debug(f"Reading article: {item.get('Title', 'Unknown')[:50]}")
+                logger.info(f"[{idx}/{total_items}] Fetching {ticker}: {item.get('Title', 'Unknown')[:40]}...")
                 full_content = fetch_full_article_content(url)
                 item['FullContent'] = full_content
                 item['EnhancedText'] = f"{item.get('Summary', '')} {full_content}"

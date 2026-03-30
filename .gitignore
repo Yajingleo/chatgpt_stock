@@ -1,3 +1,7 @@
+# Bazel
+bazel-*
+MODULE.bazel.lock
+
 # Python
 __pycache__/
 *.py[cod]

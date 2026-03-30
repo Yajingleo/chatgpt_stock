@@ -65,11 +65,22 @@ class StockNewsADKAgent:
     def __init__(self, risk_tolerance: str = "moderate"):
         self.risk_tolerance = risk_tolerance
         self.logger = get_logger('stock_agent.main')
+        self.workflow_prompts = self._build_workflow_prompts()
         if not ADK_AVAILABLE:
             self.logger.info("ADK not available - running in simulation mode")
             self.agent = None
         else:
             self.agent = self._create_agent()
+
+    def _build_workflow_prompts(self) -> Dict[str, str]:
+        """Prompts that describe each workflow step for logging/UI."""
+        return {
+            "sp500_load": "Loading SP500 trading data",
+            "sp500_momentum": "Analyzing the momentum",
+            "news": "Crawling the latest news for top performers",
+            "sentiment": "Doing sentiment analysis using LLM",
+            "recommendations": "Generating investment recommendations",
+        }
     
     def _create_agent(self):
         """Create the ADK agent with tools and workflow"""
@@ -101,9 +112,15 @@ class StockNewsADKAgent:
         
         return agent
     
-    async def run_analysis(self, user_query: str = None) -> Dict[str, Any]:
-        """Run the complete stock analysis workflow"""
-        
+    async def run_analysis(self, user_query: str = None, progress_callback=None) -> Dict[str, Any]:
+        """Run the complete stock analysis workflow
+
+        Args:
+            user_query: The user's query
+            progress_callback: Optional callback function(step, message, log) for progress updates
+        """
+        self.progress_callback = progress_callback
+
         if not ADK_AVAILABLE:
             # Simulate the workflow manually using our modular components
             return await self._simulate_workflow()
@@ -114,7 +131,8 @@ class StockNewsADKAgent:
                 query=user_query or "Analyze current stock news and provide investment recommendations",
                 parameters={
                     "lookback_days": settings.analysis.lookback_days,
-                    "limit": settings.processing.news_limit
+                    "limit": settings.processing.news_limit,
+                    "workflow_prompts": self.workflow_prompts
                 }
             )
             
@@ -125,41 +143,62 @@ class StockNewsADKAgent:
             self.logger.error(f"Error running ADK agent: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
     
+    def _emit_progress(self, step: str, message: str, log: str = None):
+        """Emit progress update to callback if available"""
+        if hasattr(self, 'progress_callback') and self.progress_callback:
+            try:
+                self.progress_callback(step, message, log)
+            except Exception as e:
+                self.logger.warning(f"Progress callback error: {e}")
+
     async def _simulate_workflow(self) -> Dict[str, Any]:
         """Simulate the ADK workflow using our modular components"""
         self.logger.info("Running in simulation mode (ADK not installed)")
+        self._emit_progress("init", "Initializing analysis...", "Starting workflow simulation")
 
         try:
-            # Step 1: Get SP500 recommendations
-            self.logger.info("Step 1: Getting S&P 500 recommendations")
+            # Step 1: Load SP500 trading data
+            self._emit_progress("sp500_load", self.workflow_prompts['sp500_load'], self.workflow_prompts['sp500_load'])
+            self.logger.info(self.workflow_prompts['sp500_load'])
             sp500_result = get_sp500_recommendations_tool(
                 lookback_days=settings.analysis.lookback_days
             )
             if not sp500_result['success']:
                 return sp500_result
 
-            # Step 2: Fetch news
-            self.logger.info("Step 2: Fetching stock news")
+            # Step 2: Analyze the momentum
+            self._emit_progress("sp500_momentum", self.workflow_prompts['sp500_momentum'], self.workflow_prompts['sp500_momentum'])
+            self.logger.info(self.workflow_prompts['sp500_momentum'])
+            self._emit_progress("sp500_momentum", f"Found {sp500_result['count']} recommended tickers", f"Momentum analysis complete: {sp500_result['count']} tickers")
+
+            # Step 3: Crawl latest news for top performers
+            self._emit_progress("news", self.workflow_prompts['news'], self.workflow_prompts['news'])
+            self.logger.info(self.workflow_prompts['news'])
             news_result = fetch_stock_news_tool(
                 sp500_result['tickers'],
                 limit=settings.processing.news_limit
             )
             if not news_result['success']:
                 return news_result
+            self._emit_progress("news", f"Retrieved {news_result['news_count']} news articles", f"News fetching complete: {news_result['news_count']} articles")
 
-            # Step 3: Analyze sentiment
-            self.logger.info("Step 3: Analyzing news sentiment")
+            # Step 4: Sentiment analysis using LLM
+            self._emit_progress("sentiment", self.workflow_prompts['sentiment'], self.workflow_prompts['sentiment'])
+            self.logger.info(self.workflow_prompts['sentiment'])
             sentiment_result = analyze_sentiment_tool(news_result['news_data'])
             if not sentiment_result['success']:
                 return sentiment_result
+            self._emit_progress("sentiment", f"Analyzed {len(sentiment_result['analyzed_tickers'])} tickers", f"Sentiment analysis complete: {len(sentiment_result['analyzed_tickers'])} tickers")
 
-            # Step 4: Generate recommendations
-            self.logger.info("Step 4: Generating recommendations")
+            # Step 5: Generate recommendations
+            self._emit_progress("recommendations", self.workflow_prompts['recommendations'], self.workflow_prompts['recommendations'])
+            self.logger.info(self.workflow_prompts['recommendations'])
             recommendations_result = generate_recommendations_tool(
                 sentiment_result['sentiment_analysis']
             )
             if not recommendations_result['success']:
                 return recommendations_result
+            self._emit_progress("complete", "Analysis complete!", f"Generated {recommendations_result['total_analyzed']} recommendations")
             
             # Combine all results
             final_result = {

@@ -59,6 +59,22 @@ except ImportError as e:
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+
+class StreamingLogHandler(logging.Handler):
+    """Custom log handler that captures logs for SSE streaming"""
+
+    def __init__(self, callback):
+        super().__init__()
+        self.callback = callback
+        self.setFormatter(logging.Formatter('%(message)s'))
+
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            self.callback(msg)
+        except Exception:
+            pass
+
 class ChatMessage:
     """Represents a chat message"""
     def __init__(self, role: str, content: str, timestamp: datetime = None):
@@ -175,9 +191,11 @@ class StockChatHandler(BaseHTTPRequestHandler):
         """Handle POST requests"""
         parsed_path = urlparse(self.path)
         path = parsed_path.path
-        
+
         if path == '/api/chat/message':
             self._handle_chat_message()
+        elif path == '/api/chat/stream':
+            self._handle_chat_stream()
         else:
             self._serve_404()
     
@@ -217,7 +235,179 @@ class StockChatHandler(BaseHTTPRequestHandler):
         except Exception as e:
             logger.error(f"Error handling chat message: {e}")
             self._send_json_response({'error': 'Internal server error'}, 500)
-    
+
+    def _handle_chat_stream(self):
+        """Handle streaming chat messages with Server-Sent Events"""
+        streaming_handler = None
+        try:
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            data = json.loads(post_data.decode('utf-8'))
+
+            user_message = data.get('message', '').strip()
+            if not user_message:
+                self._send_json_response({'error': 'Empty message'}, 400)
+                return
+
+            # Add user message to history
+            user_msg = ChatMessage('user', user_message)
+            self.chat_history.append(user_msg)
+
+            # Set up SSE headers
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/event-stream')
+            self.send_header('Cache-Control', 'no-cache')
+            self.send_header('Connection', 'keep-alive')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+
+            # Helper to send SSE log events
+            def send_log_event(log_message):
+                try:
+                    event_data = json.dumps({
+                        'type': 'log',
+                        'log': log_message,
+                        'timestamp': datetime.now().isoformat()
+                    })
+                    self.wfile.write(f"data: {event_data}\n\n".encode('utf-8'))
+                    self.wfile.flush()
+                except Exception:
+                    pass
+
+            # Attach streaming log handler to capture stock_agent logs only
+            streaming_handler = StreamingLogHandler(send_log_event)
+            streaming_handler.setLevel(logging.INFO)
+
+            # Only attach to stock_agent logger (not root) to avoid third-party noise
+            stock_agent_logger = logging.getLogger('stock_agent')
+            stock_agent_logger.addHandler(streaming_handler)
+
+            # Progress callback for status updates
+            def progress_callback(step, message, log=None):
+                event_data = json.dumps({
+                    'type': 'progress',
+                    'step': step,
+                    'message': message,
+                    'log': log or message,
+                    'timestamp': datetime.now().isoformat()
+                })
+                try:
+                    self.wfile.write(f"data: {event_data}\n\n".encode('utf-8'))
+                    self.wfile.flush()
+                except Exception:
+                    pass
+
+            # Process the message with progress callback
+            response = asyncio.run(self._process_user_message_with_progress(user_message, progress_callback))
+
+            # Add assistant response to history
+            assistant_msg = ChatMessage('assistant', response)
+            self.chat_history.append(assistant_msg)
+
+            # Send final response
+            final_data = json.dumps({
+                'type': 'response',
+                'response': response,
+                'timestamp': datetime.now().isoformat()
+            })
+            self.wfile.write(f"data: {final_data}\n\n".encode('utf-8'))
+            self.wfile.write(b"data: [DONE]\n\n")
+            self.wfile.flush()
+
+        except Exception as e:
+            logger.error(f"Error handling stream: {e}")
+            try:
+                error_data = json.dumps({'type': 'error', 'error': str(e)})
+                self.wfile.write(f"data: {error_data}\n\n".encode('utf-8'))
+                self.wfile.flush()
+            except Exception:
+                pass
+        finally:
+            # Clean up: remove the streaming handler
+            if streaming_handler:
+                stock_agent_logger = logging.getLogger('stock_agent')
+                stock_agent_logger.removeHandler(streaming_handler)
+
+    async def _process_user_message_with_progress(self, message: str, progress_callback) -> str:
+        """Process user message with progress updates"""
+        try:
+            parsed = self.nlp.parse_query(message)
+            intent = parsed['intent']
+            entities = parsed['entities']
+
+            logger.info(f"Parsed intent: {intent}, entities: {entities}")
+
+            # For recommendation requests, use the progress callback
+            if intent == 'recommendations':
+                return await self._get_recommendations_with_progress(progress_callback)
+            elif intent == 'analyze_stock' and 'ticker' in entities:
+                return await self._analyze_stock_with_progress(entities['ticker'], progress_callback)
+            elif intent == 'market_overview':
+                return await self._get_market_overview_with_progress(progress_callback)
+            else:
+                # For other intents, use regular processing
+                return await self._process_user_message(message)
+
+        except Exception as e:
+            logger.error(f"Error processing message with progress: {e}")
+            return f"I encountered an error: {str(e)}"
+
+    async def _get_recommendations_with_progress(self, progress_callback) -> str:
+        """Get stock recommendations with progress updates"""
+        if not STOCK_AGENT_AVAILABLE:
+            return "❌ Stock analysis system is not available."
+
+        try:
+            results = await self.stock_agent.run_analysis(
+                "Provide investment recommendations based on current stock news sentiment",
+                progress_callback=progress_callback
+            )
+
+            if not results.get('success'):
+                return f"❌ Analysis failed: {results.get('error', 'Unknown error')}"
+
+            return self._format_recommendations(results)
+
+        except Exception as e:
+            return f"❌ Error getting recommendations: {str(e)}"
+
+    async def _analyze_stock_with_progress(self, ticker: str, progress_callback) -> str:
+        """Analyze specific stock with progress updates"""
+        if not STOCK_AGENT_AVAILABLE:
+            return f"❌ Stock analysis system is not available."
+
+        try:
+            progress_callback("init", f"Starting analysis for {ticker}...", f"Analyzing {ticker}")
+            query = f"Analyze {ticker} stock with recent news and sentiment analysis"
+            results = await self.stock_agent.run_analysis(query, progress_callback=progress_callback)
+
+            if not results.get('success'):
+                return f"❌ Analysis failed for {ticker}: {results.get('error', 'Unknown error')}"
+
+            return f"🔍 **Analysis Results for {ticker}**\n\n" + self._format_recommendations(results)
+
+        except Exception as e:
+            return f"❌ Error analyzing {ticker}: {str(e)}"
+
+    async def _get_market_overview_with_progress(self, progress_callback) -> str:
+        """Get market overview with progress updates"""
+        if not STOCK_AGENT_AVAILABLE:
+            return "❌ Stock analysis system is not available."
+
+        try:
+            results = await self.stock_agent.run_analysis(
+                "Provide market overview and investment recommendations",
+                progress_callback=progress_callback
+            )
+
+            if not results.get('success'):
+                return f"❌ Analysis failed: {results.get('error', 'Unknown error')}"
+
+            return "📊 **Market Overview**\n\n" + self._format_recommendations(results)
+
+        except Exception as e:
+            return f"❌ Error: {str(e)}"
+
     async def _process_user_message(self, message: str) -> str:
         """Process user message and generate response"""
         try:
@@ -693,19 +883,19 @@ What would you like to analyze?
             align-items: center;
             gap: 0.5rem;
             margin-bottom: 1rem;
-            color: #666;
+            color: #fff;
             font-style: italic;
         }
-        
+
         .typing-dots {
             display: flex;
             gap: 0.25rem;
         }
-        
+
         .typing-dots span {
             width: 6px;
             height: 6px;
-            background: #666;
+            background: #fff;
             border-radius: 50%;
             animation: typing 1.5s infinite;
         }
@@ -722,7 +912,68 @@ What would you like to analyze?
             0%, 60%, 100% { opacity: 0.3; }
             30% { opacity: 1; }
         }
-        
+
+        .progress-panel {
+            display: none;
+            background: #1a1a2e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .progress-panel.active {
+            display: block;
+        }
+
+        .progress-status {
+            color: #4CAF50;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .progress-status .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid #333;
+            border-top-color: #4CAF50;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .log-entries {
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            color: #888;
+        }
+
+        .log-entry {
+            padding: 0.25rem 0;
+            border-bottom: 1px solid #222;
+        }
+
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+
+        .log-entry .timestamp {
+            color: #666;
+            margin-right: 0.5rem;
+        }
+
+        .log-entry .message {
+            color: #aaa;
+        }
+
         .welcome-message {
             text-align: center;
             color: #666;
@@ -759,8 +1010,16 @@ What would you like to analyze?
             </div>
         </div>
         
+        <div class="progress-panel" id="progressPanel">
+            <div class="progress-status">
+                <div class="spinner"></div>
+                <span id="progressStatus">Initializing...</span>
+            </div>
+            <div class="log-entries" id="logEntries"></div>
+        </div>
+
         <div class="typing-indicator" id="typingIndicator">
-            <span>Assistant is typing</span>
+            <span id="typingText">Assistant is working</span>
             <div class="typing-dots">
                 <span></span>
                 <span></span>
@@ -785,10 +1044,14 @@ What would you like to analyze?
         const chatInput = document.getElementById('chatInput');
         const sendButton = document.getElementById('sendButton');
         const typingIndicator = document.getElementById('typingIndicator');
-        
+        const typingText = document.getElementById('typingText');
+        const progressPanel = document.getElementById('progressPanel');
+        const progressStatus = document.getElementById('progressStatus');
+        const logEntries = document.getElementById('logEntries');
+
         // Load chat history on page load
         loadChatHistory();
-        
+
         // Event listeners
         chatInput.addEventListener('keypress', function(e) {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -796,25 +1059,103 @@ What would you like to analyze?
                 sendMessage();
             }
         });
-        
+
         sendButton.addEventListener('click', sendMessage);
-        
+
         async function sendMessage() {
             const message = chatInput.value.trim();
             if (!message) return;
-            
+
             // Clear input and disable send button
             chatInput.value = '';
             sendButton.disabled = true;
-            
+
             // Add user message to chat
             addMessage('user', message);
-            
-            // Show typing indicator
+
+            // Show typing indicator and progress panel
             showTypingIndicator();
-            
+            showProgressPanel();
+            clearLogs();
+
+            // Check if this is an analysis request (use streaming)
+            const isAnalysisRequest = /recommend|analyze|sentiment|market|overview/i.test(message);
+
+            if (isAnalysisRequest) {
+                await sendStreamingMessage(message);
+            } else {
+                await sendRegularMessage(message);
+            }
+        }
+
+        async function sendStreamingMessage(message) {
             try {
-                // Send message to server
+                const response = await fetch('/api/chat/stream', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ message: message })
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\\n');
+                    buffer = lines.pop();
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = line.slice(6);
+                            if (data === '[DONE]') {
+                                hideProgressPanel();
+                                hideTypingIndicator();
+                                sendButton.disabled = false;
+                                chatInput.focus();
+                                return;
+                            }
+                            try {
+                                const parsed = JSON.parse(data);
+                                handleStreamEvent(parsed);
+                            } catch (e) {
+                                console.log('Parse error:', e);
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                addMessage('assistant', 'Sorry, I couldn\\'t process your request. Please try again.');
+                console.error('Streaming error:', error);
+            } finally {
+                hideProgressPanel();
+                hideTypingIndicator();
+                sendButton.disabled = false;
+                chatInput.focus();
+            }
+        }
+
+        function handleStreamEvent(event) {
+            if (event.type === 'log') {
+                // Real-time log from Python logger
+                addLog(event.log);
+            } else if (event.type === 'progress') {
+                updateProgress(event.step, event.message);
+                addLog(event.log || event.message);
+            } else if (event.type === 'response') {
+                addMessage('assistant', event.response);
+            } else if (event.type === 'error') {
+                addMessage('assistant', 'Error: ' + event.error);
+            }
+        }
+
+        async function sendRegularMessage(message) {
+            try {
                 const response = await fetch('/api/chat/message', {
                     method: 'POST',
                     headers: {
@@ -822,11 +1163,10 @@ What would you like to analyze?
                     },
                     body: JSON.stringify({ message: message })
                 });
-                
+
                 const data = await response.json();
-                
+
                 if (response.ok) {
-                    // Add assistant response
                     addMessage('assistant', data.response);
                 } else {
                     addMessage('assistant', 'Sorry, I encountered an error: ' + (data.error || 'Unknown error'));
@@ -835,38 +1175,79 @@ What would you like to analyze?
                 addMessage('assistant', 'Sorry, I couldn\\'t process your request. Please try again.');
                 console.error('Error sending message:', error);
             } finally {
-                // Hide typing indicator and re-enable send button
+                hideProgressPanel();
                 hideTypingIndicator();
                 sendButton.disabled = false;
                 chatInput.focus();
             }
         }
-        
+
         function addMessage(role, content) {
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${role}`;
-            
+
             const contentDiv = document.createElement('div');
             contentDiv.className = 'message-content';
             contentDiv.textContent = content;
-            
+
             const timeDiv = document.createElement('div');
             timeDiv.className = 'message-time';
             timeDiv.textContent = new Date().toLocaleTimeString();
-            
+
             messageDiv.appendChild(contentDiv);
             messageDiv.appendChild(timeDiv);
-            
+
             chatMessages.appendChild(messageDiv);
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
-        
+
         function showTypingIndicator() {
             typingIndicator.style.display = 'flex';
+            typingText.textContent = 'Assistant is working';
         }
-        
+
         function hideTypingIndicator() {
             typingIndicator.style.display = 'none';
+        }
+
+        function showProgressPanel() {
+            progressPanel.classList.add('active');
+            progressStatus.textContent = 'Initializing...';
+        }
+
+        function hideProgressPanel() {
+            progressPanel.classList.remove('active');
+        }
+
+        function updateProgress(step, message) {
+            progressStatus.textContent = message;
+            typingText.textContent = message;
+        }
+
+        function addLog(message) {
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+
+            const timestamp = document.createElement('span');
+            timestamp.className = 'timestamp';
+            timestamp.textContent = new Date().toLocaleTimeString();
+
+            const msg = document.createElement('span');
+            msg.className = 'message';
+            msg.textContent = message;
+
+            entry.appendChild(timestamp);
+            entry.appendChild(msg);
+            logEntries.appendChild(entry);
+            // Keep only the latest 10 log entries, similar to `tail`
+            while (logEntries.children.length > 10) {
+                logEntries.removeChild(logEntries.firstChild);
+            }
+            logEntries.scrollTop = logEntries.scrollHeight;
+        }
+
+        function clearLogs() {
+            logEntries.innerHTML = '';
         }
         
         async function loadChatHistory() {

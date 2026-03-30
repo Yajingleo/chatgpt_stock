@@ -11,7 +11,7 @@ module(
 )
 
 # Python rules
-bazel_dep(name = "rules_python", version = "0.31.0")
+bazel_dep(name = "rules_python", version = "1.7.0")
 
 # Configure Python toolchain
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
@@ -28,15 +28,3 @@ pip.parse(
 )
 use_repo(pip, "pip_deps")
 
-# Go rules
-bazel_dep(name = "rules_go", version = "0.46.0")
-bazel_dep(name = "gazelle", version = "0.35.0")
-
-# Gazelle for auto-generation
-gazelle = use_extension("@gazelle//:extensions.bzl", "gazelle")
-
-# Protocol Buffers
-bazel_dep(name = "protobuf", version = "21.7")
-
-# Build tools
-bazel_dep(name = "buildtools", version = "6.4.0")

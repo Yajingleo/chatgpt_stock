@@ -1,88 +1,96 @@
 # Main BUILD file for the stock analysis project
-# Following Google BUILD file conventions
 
 load("@pip_deps//:requirements.bzl", "requirement")
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
-# Core stock analysis library
+# Main stock_agent library - aggregates all submodules
 py_library(
-    name = "stock_agent_lib",
-    srcs = [
-        "sentiment_analyzer.py",
-        "simple_stock_agent.py", 
-        "improved_voice_agent.py",
-    ],
+    name = "stock_agent",
+    srcs = glob(["stock_agent/**/*.py"]),
+    imports = ["."],
     deps = [
-        "//stock_selection/agent:stock_agent_main",
         requirement("pandas"),
+        requirement("numpy"),
+        requirement("scipy"),
         requirement("yfinance"),
-        requirement("requests"), 
+        requirement("requests"),
         requirement("beautifulsoup4"),
         requirement("openai"),
         requirement("python-dotenv"),
     ],
-    visibility = ["//visibility:public"],
 )
 
-# Voice-specific dependencies
+# Web server
 py_library(
-    name = "voice_lib",
-    srcs = ["improved_voice_agent.py"],
+    name = "web_lib",
+    srcs = glob(["web/**/*.py"]),
+    imports = ["."],
     deps = [
-        ":stock_agent_lib",
-        requirement("speechrecognition"),
-        requirement("pyttsx3"),
-        # requirement("pyaudio"),  # Platform-dependent
-    ],
-)
-
-# Python binaries
-py_binary(
-    name = "simple_agent",
-    srcs = ["simple_stock_agent.py"],
-    main = "simple_stock_agent.py",
-    deps = [":stock_agent_lib"],
-)
-
-py_binary(
-    name = "voice_agent", 
-    srcs = ["improved_voice_agent.py"],
-    main = "improved_voice_agent.py",
-    deps = [
-        ":stock_agent_lib",
-        requirement("speechrecognition"),
-        requirement("pyttsx3"),
+        ":stock_agent",
     ],
 )
 
 py_binary(
     name = "web_server",
-    srcs = ["minimal_web_server.py"],
-    main = "minimal_web_server.py",
-    deps = [":stock_agent_lib"],
+    srcs = ["web/server.py"],
+    main = "web/server.py",
+    imports = ["."],
+    deps = [":web_lib"],
+)
+
+# Example scripts
+py_binary(
+    name = "agent_example",
+    srcs = ["scripts/examples/agent_example.py"],
+    main = "scripts/examples/agent_example.py",
+    imports = ["."],
+    deps = [":stock_agent"],
 )
 
 py_binary(
-    name = "chat_server",
-    srcs = ["adk_web_chat_server.py"],  
-    main = "adk_web_chat_server.py",
-    deps = [":stock_agent_lib"],
+    name = "launch_server",
+    srcs = ["scripts/launch_server.py"],
+    main = "scripts/launch_server.py",
+    imports = ["."],
+    deps = [
+        ":stock_agent",
+        ":web_lib",
+    ],
 )
 
-# Test targets
-py_test(
-    name = "agent_tests",
-    srcs = [
-        "test_agent.py",
-        "test_chat_server.py", 
-        "test_import_fix.py",
-        "test_llm_analysis.py",
-        "test_openai_analysis.py",
-    ],
+# Diagnostic scripts
+py_binary(
+    name = "diag_openai",
+    srcs = ["scripts/diagnostics/diag_openai.py"],
+    main = "scripts/diagnostics/diag_openai.py",
+    imports = ["."],
     deps = [
-        ":stock_agent_lib",
-        requirement("pytest"),
+        requirement("openai"),
+        requirement("python-dotenv"),
     ],
 )
+
+py_binary(
+    name = "test_yfinance",
+    srcs = ["scripts/diagnostics/test_yfinance.py"],
+    main = "scripts/diagnostics/test_yfinance.py",
+    imports = ["."],
+    deps = [
+        requirement("yfinance"),
+        requirement("pandas"),
+    ],
+)
+
+# Test targets (add test files to tests/ directory to enable)
+# py_test(
+#     name = "tests",
+#     srcs = glob(["tests/**/*_test.py"]),
+#     main = "tests/run_tests.py",  # Create this to run pytest
+#     imports = ["."],
+#     deps = [
+#         ":stock_agent",
+#         requirement("pytest"),
+#     ],
+# )

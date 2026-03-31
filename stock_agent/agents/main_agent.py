@@ -39,12 +39,17 @@ except ImportError as e:
 
 import asyncio
 import json
+import os
+import pandas as pd
 from typing import Dict, Any
 from datetime import datetime
 
 # Import config and logging
 from stock_agent.config import settings
 from stock_agent.utils import get_logger
+
+# Report directory for saving results
+REPORT_DIR = os.path.join(os.path.dirname(__file__), '..', 'report')
 
 # Import our modular components
 from stock_agent.data.news_crawler import (
@@ -151,6 +156,66 @@ class StockNewsADKAgent:
             except Exception as e:
                 self.logger.warning(f"Progress callback error: {e}")
 
+    def _save_all_results(
+        self,
+        sp500_result: Dict[str, Any],
+        news_result: Dict[str, Any],
+        sentiment_result: Dict[str, Any],
+        recommendations_result: Dict[str, Any]
+    ):
+        """Save all analysis results to CSV files."""
+        try:
+            os.makedirs(REPORT_DIR, exist_ok=True)
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+            # Save SP500 recommended tickers
+            if sp500_result.get('success') and sp500_result.get('tickers'):
+                sp500_df = pd.DataFrame({
+                    'Ticker': sp500_result['tickers'],
+                    'Analysis_Date': datetime.now().isoformat()
+                })
+                sp500_path = os.path.join(REPORT_DIR, f'sp500_recommendations_{timestamp}.csv')
+                sp500_df.to_csv(sp500_path, index=False)
+                self.logger.info(f"SP500 recommendations saved to {sp500_path}")
+
+            # Save news data
+            if news_result.get('success') and news_result.get('news_data'):
+                news_df = pd.DataFrame(news_result['news_data'])
+                news_path = os.path.join(REPORT_DIR, f'news_data_{timestamp}.csv')
+                news_df.to_csv(news_path, index=False)
+                self.logger.info(f"News data saved to {news_path}")
+
+            # Save sentiment analysis
+            if sentiment_result.get('success') and sentiment_result.get('sentiment_analysis'):
+                sentiment_data = []
+                for ticker, data in sentiment_result['sentiment_analysis'].items():
+                    sentiment_data.append({
+                        'Ticker': ticker,
+                        'Sentiment_Score': data.get('sentiment_score', 0),
+                        'Positive_Count': data.get('positive_count', 0),
+                        'Negative_Count': data.get('negative_count', 0),
+                        'News_Count': data.get('news_count', 0),
+                        'Confidence': data.get('confidence', 'low'),
+                        'Content_Depth': data.get('content_depth', 'summary_only'),
+                        'Key_Phrases': '; '.join(data.get('key_phrases', [])[:5])
+                    })
+                sentiment_df = pd.DataFrame(sentiment_data)
+                sentiment_path = os.path.join(REPORT_DIR, f'sentiment_analysis_{timestamp}.csv')
+                sentiment_df.to_csv(sentiment_path, index=False)
+                self.logger.info(f"Sentiment analysis saved to {sentiment_path}")
+
+            # Save final recommendations
+            if recommendations_result.get('success') and recommendations_result.get('recommendations'):
+                rec_df = pd.DataFrame(recommendations_result['recommendations'])
+                rec_path = os.path.join(REPORT_DIR, f'recommendations_{timestamp}.csv')
+                rec_df.to_csv(rec_path, index=False)
+                self.logger.info(f"Recommendations saved to {rec_path}")
+
+            self.logger.info(f"All results saved to {REPORT_DIR}")
+
+        except Exception as e:
+            self.logger.warning(f"Failed to save results to CSV: {e}", exc_info=True)
+
     async def _simulate_workflow(self) -> Dict[str, Any]:
         """Simulate the ADK workflow using our modular components"""
         self.logger.info("Running in simulation mode (ADK not installed)")
@@ -200,13 +265,21 @@ class StockNewsADKAgent:
                 return recommendations_result
             self._emit_progress("complete", "Analysis complete!", f"Generated {recommendations_result['total_analyzed']} recommendations")
             
+            # Save all results to CSV
+            self._save_all_results(
+                sp500_result=sp500_result,
+                news_result=news_result,
+                sentiment_result=sentiment_result,
+                recommendations_result=recommendations_result
+            )
+
             # Combine all results
             final_result = {
                 "success": True,
                 "timestamp": datetime.now().isoformat(),
                 "workflow_steps": {
                     "sp500_analysis": sp500_result,
-                    "news_fetching": news_result, 
+                    "news_fetching": news_result,
                     "sentiment_analysis": sentiment_result,
                     "recommendations": recommendations_result
                 },
@@ -216,7 +289,7 @@ class StockNewsADKAgent:
                     "recommendations_generated": recommendations_result['total_analyzed']
                 }
             }
-            
+
             return final_result
 
         except Exception as e:

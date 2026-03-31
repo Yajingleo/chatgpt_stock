@@ -151,15 +151,29 @@ def fetch_stock_news_tool(
 class NewsContentEnhancer:
     """Helper class to enhance news content with full article text."""
 
-    def __init__(self, rate_limit_delay: float = None):
+    def __init__(self, rate_limit_delay: float = None, max_workers: int = None):
         """
         Initialize the enhancer.
 
         Args:
             rate_limit_delay: Delay between requests in seconds.
                             Defaults to config value.
+            max_workers: Number of parallel workers. Defaults to config value.
         """
         self.rate_limit_delay = rate_limit_delay or settings.rate_limit.news_rate_limit_delay
+        self.max_workers = max_workers or settings.processing.max_workers
+
+    def _fetch_content_for_item(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        """Fetch full content for a single news item."""
+        url = item.get('Link', '')
+        if url and url != 'No link':
+            full_content = fetch_full_article_content(url)
+            item['FullContent'] = full_content
+            item['EnhancedText'] = f"{item.get('Summary', '')} {full_content}"
+        else:
+            item['FullContent'] = "No content available"
+            item['EnhancedText'] = item.get('Summary', '')
+        return item
 
     def enhance_news_items(
         self,
@@ -167,7 +181,7 @@ class NewsContentEnhancer:
         max_items: int = None
     ) -> List[Dict[str, Any]]:
         """
-        Enhance news items with full article content.
+        Enhance news items with full article content using parallel processing.
 
         Args:
             news_data: List of news items to enhance
@@ -176,30 +190,39 @@ class NewsContentEnhancer:
         Returns:
             Enhanced news items with full content
         """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
         max_items = max_items or settings.processing.max_articles_to_enhance
+        items_to_process = news_data[:max_items]
+        total_items = len(items_to_process)
+        logger.info(f"Enhancing {total_items} articles with full content using {self.max_workers} workers")
+
         enhanced_news = []
-        total_items = min(len(news_data), max_items)
-        logger.info(f"Enhancing {total_items} articles with full content")
 
-        for idx, item in enumerate(news_data[:max_items], 1):
-            url = item.get('Link', '')
-            ticker = item.get('Ticker', 'UNKNOWN')
-            if url and url != 'No link':
-                logger.info(f"[{idx}/{total_items}] Fetching {ticker}: {item.get('Title', 'Unknown')[:40]}...")
-                full_content = fetch_full_article_content(url)
-                item['FullContent'] = full_content
-                item['EnhancedText'] = f"{item.get('Summary', '')} {full_content}"
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            # Submit all tasks
+            future_to_item = {
+                executor.submit(self._fetch_content_for_item, item.copy()): idx
+                for idx, item in enumerate(items_to_process)
+            }
 
-                # Rate limiting is handled in fetch_full_article_content
-                # Add small additional delay to be respectful
-                time.sleep(self.rate_limit_delay)
-            else:
-                item['FullContent'] = "No content available"
-                item['EnhancedText'] = item.get('Summary', '')
+            # Collect results as they complete
+            completed = 0
+            for future in as_completed(future_to_item):
+                idx = future_to_item[future]
+                completed += 1
+                try:
+                    enhanced_item = future.result()
+                    enhanced_news.append((idx, enhanced_item))
+                    ticker = enhanced_item.get('Ticker', 'UNKNOWN')
+                    logger.info(f"[{completed}/{total_items}] Enhanced {ticker}: {enhanced_item.get('Title', 'Unknown')[:40]}...")
+                except Exception as e:
+                    logger.error(f"[{completed}/{total_items}] Failed to enhance item: {e}")
+                    enhanced_news.append((idx, items_to_process[idx]))
 
-            enhanced_news.append(item)
-
-        return enhanced_news
+        # Sort by original order and return just the items
+        enhanced_news.sort(key=lambda x: x[0])
+        return [item for _, item in enhanced_news]
 
     def get_content_quality_metrics(self, news_data: List[Dict[str, Any]]) -> Dict[str, int]:
         """

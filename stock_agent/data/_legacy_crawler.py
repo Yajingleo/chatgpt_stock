@@ -2,51 +2,81 @@ import pandas as pd
 import yfinance as yf
 import argparse
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import List, Dict, Any
 
-from stock_agent.data.sp500_analyzer import SP500StockAnalyzer
+from stock_agent.config import settings
+from stock_agent.utils import get_logger
+
+logger = get_logger('stock_agent.news_crawler')
+
 
 class StockNewsCrawler:
-    """Fetch and display stock news from Yahoo Finance."""
+    """Fetch and display stock news from Yahoo Finance with parallel processing."""
 
-    def __init__(self, tickers: list[str]):
+    def __init__(self, tickers: list[str], max_workers: int = None):
         self.tickers = tickers
         self.news_df = pd.DataFrame()
+        self.max_workers = max_workers or settings.processing.max_workers
+        self._lock = None  # Will be set if needed for thread safety
 
-    def _get_stock_news(self, ticker: str):
+    def _get_stock_news_for_ticker(self, ticker: str) -> List[Dict[str, Any]]:
+        """Fetch news for a single ticker. Returns list of news items."""
+        news_items_list = []
         try:
-            # Get news from Yahoo Finance
             stock = yf.Ticker(ticker)
-            news_items = stock.news
-            
-            print(f"Recent news for {ticker}:")
+            news_items = stock.news or []
+
             for item in news_items:
-                # print(item['content'])
-                # print(item['content'].keys())
-            
-                print(f"\nTitle: {item['content'].get('title', 'No title')}")
-                print(f"Link: {item['content']['canonicalUrl'].get('url', 'No link')}")
-                print(f"Published: {item['content'].get('pubDate', 'No date')}")
-                print(f"Summary: {item['content'].get('summary', 'No summary')}")
+                content = item.get('content', {})
+                canonical_url = content.get('canonicalUrl', {})
 
-                # Append news to DataFrame
-                self.news_df = pd.concat([self.news_df, pd.DataFrame([{
-                    'PublishedTime': item['content'].get('pubDate', 'No date'),
+                news_items_list.append({
+                    'PublishedTime': content.get('pubDate', 'No date'),
                     'Ticker': ticker,
-                    'Title': item['content'].get('title', 'No title'),
-                    'Link': item['content']['canonicalUrl'].get('url', 'No link'),
-                    'Summary': item['content'].get('summary', 'No summary')
-                }])], ignore_index=True)
+                    'Title': content.get('title', 'No title'),
+                    'Link': canonical_url.get('url', 'No link'),
+                    'Summary': content.get('summary', 'No summary')
+                })
 
-                print("-" * 50)
-            
+            logger.info(f"Fetched {len(news_items_list)} news items for {ticker}")
+
         except Exception as e:
-            print(f"Error fetching news: {e}")
-    
+            logger.warning(f"Error fetching news for {ticker}: {e}")
+
+        return news_items_list
+
     def get_stock_news(self):
-        for ticker in self.tickers:
-            self._get_stock_news(ticker)
-            print("\n" + "=" * 80 + "\n")  # Separator between different stocks
-        print(self.news_df)
+        """Fetch news for all tickers in parallel."""
+        logger.info(f"Fetching news for {len(self.tickers)} tickers using {self.max_workers} workers")
+
+        all_news = []
+
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            # Submit all tasks
+            future_to_ticker = {
+                executor.submit(self._get_stock_news_for_ticker, ticker): ticker
+                for ticker in self.tickers
+            }
+
+            # Collect results as they complete
+            completed = 0
+            total = len(self.tickers)
+            for future in as_completed(future_to_ticker):
+                ticker = future_to_ticker[future]
+                completed += 1
+                try:
+                    news_items = future.result()
+                    all_news.extend(news_items)
+                    logger.info(f"[{completed}/{total}] Completed {ticker}: {len(news_items)} articles")
+                except Exception as e:
+                    logger.error(f"[{completed}/{total}] Failed {ticker}: {e}")
+
+        # Convert to DataFrame
+        if all_news:
+            self.news_df = pd.DataFrame(all_news)
+
+        logger.info(f"Total news fetched: {len(self.news_df)} articles from {len(self.tickers)} tickers")
 
     def save_news_to_csv(self, dirname="report", filename="stock_news.csv"):
         """Save the news DataFrame to a CSV file."""
@@ -62,11 +92,13 @@ def parse_ticker_list(ticker_str: str) -> list[str]:
     return [ticker.strip().upper() for ticker in ticker_str.split(',') if ticker.strip()]
 
 if __name__ == "__main__":
+    from stock_agent.data.sp500_analyzer import SP500StockAnalyzer
+
     # Create argument parser
     parser = argparse.ArgumentParser(description='Get stock news from Yahoo Finance')
     parser.add_argument('--tickers', type=parse_ticker_list, default="APPL,MSFT,GOOGL,AMZN,TSLA,NVDA,META",
                       help='Comma-separated list of stock ticker symbols (default: PARA)')
-    
+
     # Parse arguments
     args = parser.parse_args()
 

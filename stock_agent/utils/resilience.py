@@ -328,8 +328,8 @@ def get_rate_limiter(
                 elif name == 'api':
                     requests_per_second = 1.0 / settings.rate_limit.api_rate_limit_delay
                 elif name == 'openai':
-                    # OpenAI has stricter rate limits
-                    requests_per_second = 1.0
+                    # Use configurable OpenAI rate limit
+                    requests_per_second = settings.rate_limit.openai_rate_limit
                 else:
                     requests_per_second = 2.0  # Default: 2 requests/second
 

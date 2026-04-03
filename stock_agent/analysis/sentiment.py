@@ -14,7 +14,8 @@ Features:
 import json
 import csv
 import os
-from typing import List, Dict, Any
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import List, Dict, Any, Tuple
 from datetime import datetime
 
 import pandas as pd
@@ -325,8 +326,38 @@ def _simulate_openai_analysis(article_text: str, ticker: str, title: str) -> Dic
     }
 
 
+def _analyze_single_article_llm(item: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Analyze a single article with LLM. Returns (item_with_result, raw_response_entry)."""
+    ticker = item.get('Ticker', 'UNKNOWN')
+    full_content = item.get('EnhancedText', item.get('FullContent', '')).lower()
+
+    logger.debug(f"  Using LLM analysis for {ticker} (content length: {len(full_content)})")
+    llm_result = analyze_article_with_llm(full_content, ticker, item.get('Title', ''))
+
+    # Store raw OpenAI response for CSV export
+    raw_response_entry = {
+        'timestamp': datetime.now().isoformat(),
+        'ticker': ticker,
+        'title': item.get('Title', ''),
+        'link': item.get('Link', ''),
+        'published_time': item.get('PublishedTime', ''),
+        'sentiment_score': llm_result.get('sentiment_score', 0),
+        'confidence': llm_result.get('confidence', 'unknown'),
+        'key_factors': '; '.join(llm_result.get('key_factors', [])),
+        'investment_impact': llm_result.get('investment_impact', 'neutral'),
+        'reasoning': llm_result.get('reasoning', ''),
+        'market_catalysts': '; '.join(llm_result.get('market_catalysts', [])),
+        'content_length': len(full_content)
+    }
+
+    return {'item': item, 'llm_result': llm_result}, raw_response_entry
+
+
 def analyze_sentiment_tool(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """ADK Tool: Enhanced sentiment analysis of stock news with full content"""
+    """ADK Tool: Enhanced sentiment analysis of stock news with full content
+
+    Uses parallel processing for OpenAI API calls to improve performance.
+    """
     try:
         logger.info(f"Starting sentiment analysis for {len(news_data)} articles")
 
@@ -336,82 +367,101 @@ def analyze_sentiment_tool(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         # Enhanced sentiment keywords with more financial terms
         sentiment_keywords = {
             'positive': [
-                'growth', 'profit', 'increase', 'strong', 'beat', 'up', 'bullish', 'surge', 'gain', 
-                'record', 'breakthrough', 'success', 'expansion', 'rising', 'higher', 'boost', 
+                'growth', 'profit', 'increase', 'strong', 'beat', 'up', 'bullish', 'surge', 'gain',
+                'record', 'breakthrough', 'success', 'expansion', 'rising', 'higher', 'boost',
                 'upgrade', 'outperform', 'rally', 'momentum', 'strength', 'improve', 'revenue',
                 'earnings', 'buyback', 'dividend', 'acquisition', 'partnership', 'innovation',
                 'competitive', 'market share', 'efficiency', 'productivity', 'optimistic'
             ],
             'negative': [
-                'loss', 'decline', 'fall', 'weak', 'miss', 'down', 'bearish', 'drop', 'crash', 
-                'fail', 'concern', 'risk', 'warning', 'cut', 'reduce', 'lower', 'downgrade', 
+                'loss', 'decline', 'fall', 'weak', 'miss', 'down', 'bearish', 'drop', 'crash',
+                'fail', 'concern', 'risk', 'warning', 'cut', 'reduce', 'lower', 'downgrade',
                 'underperform', 'slowdown', 'pressure', 'challenge', 'struggle', 'uncertain',
                 'volatile', 'debt', 'lawsuit', 'investigation', 'regulatory', 'competition',
                 'market share loss', 'headwinds', 'recession', 'inflation', 'costs'
             ]
         }
-        
+
         ticker_sentiment = {}
-        
-        total_articles = len(news_data)
-        for idx, item in enumerate(news_data, 1):
+
+        # Separate articles into LLM-eligible and keyword-only
+        llm_articles = []
+        keyword_articles = []
+
+        for item in news_data:
+            full_content = item.get('EnhancedText', item.get('FullContent', ''))
+            if full_content and len(full_content) > 500:
+                llm_articles.append(item)
+            else:
+                keyword_articles.append(item)
+
+        logger.info(f"Processing {len(llm_articles)} articles with LLM (parallel), {len(keyword_articles)} with keyword analysis")
+
+        # Process LLM articles in parallel
+        if llm_articles:
+            max_workers = settings.processing.max_workers
+            logger.info(f"Starting parallel LLM analysis with {max_workers} workers for {len(llm_articles)} articles")
+
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Submit all LLM analysis tasks
+                future_to_item = {
+                    executor.submit(_analyze_single_article_llm, item): item
+                    for item in llm_articles
+                }
+
+                # Collect results as they complete
+                completed = 0
+                total_llm = len(llm_articles)
+                for future in as_completed(future_to_item):
+                    item = future_to_item[future]
+                    ticker = item.get('Ticker', 'UNKNOWN')
+                    completed += 1
+
+                    try:
+                        result, raw_response_entry = future.result()
+                        llm_result = result['llm_result']
+                        raw_openai_responses.append(raw_response_entry)
+
+                        logger.info(f"[LLM {completed}/{total_llm}] Completed {ticker}: score={llm_result.get('sentiment_score', 0)}")
+
+                        # Initialize ticker sentiment if needed
+                        if ticker not in ticker_sentiment:
+                            ticker_sentiment[ticker] = {
+                                'positive_count': 0,
+                                'negative_count': 0,
+                                'news_count': 0,
+                                'sentiment_score': 0,
+                                'content_depth': 'summary_only',
+                                'key_phrases': [],
+                                'confidence': 'low'
+                            }
+
+                        # Use LLM results
+                        ticker_sentiment[ticker]['sentiment_score'] += llm_result.get('sentiment_score', 0)
+                        ticker_sentiment[ticker]['news_count'] += 1
+                        ticker_sentiment[ticker]['content_depth'] = 'full_article'
+                        ticker_sentiment[ticker]['confidence'] = llm_result.get('confidence', 'medium')
+
+                        # Extract key factors as phrases
+                        key_factors = llm_result.get('key_factors', [])
+                        ticker_sentiment[ticker]['key_phrases'].extend(key_factors[:3])
+
+                    except Exception as e:
+                        logger.error(f"[LLM {completed}/{total_llm}] Failed {ticker}: {e}")
+
+        # Process keyword-only articles (sequential, they're fast)
+        total_keyword = len(keyword_articles)
+        for idx, item in enumerate(keyword_articles, 1):
             ticker = item.get('Ticker', 'UNKNOWN')
             title = item.get('Title', '').lower()
             summary = item.get('Summary', '').lower()
 
-            # Log progress for each article
-            logger.info(f"[{idx}/{total_articles}] Analyzing {ticker}: {item.get('Title', '')[:50]}...")
+            logger.info(f"[Keyword {idx}/{total_keyword}] Analyzing {ticker}: {item.get('Title', '')[:50]}...")
 
             # Use full content if available, otherwise fall back to summary
             full_content = item.get('EnhancedText', item.get('FullContent', '')).lower()
             analysis_text = full_content if full_content and len(full_content) > 100 else f"{title} {summary}"
 
-            # Use LLM analysis for articles with substantial content
-            if full_content and len(full_content) > 500:
-                # Use LLM analysis for rich content
-                logger.debug(f"  Using LLM analysis for {ticker} (content length: {len(full_content)})")
-                llm_result = analyze_article_with_llm(full_content, ticker, item.get('Title', ''))
-                
-                # Store raw OpenAI response for CSV export
-                raw_response_entry = {
-                    'timestamp': datetime.now().isoformat(),
-                    'ticker': ticker,
-                    'title': item.get('Title', ''),
-                    'link': item.get('Link', ''),
-                    'published_time': item.get('PublishedTime', ''),
-                    'sentiment_score': llm_result.get('sentiment_score', 0),
-                    'confidence': llm_result.get('confidence', 'unknown'),
-                    'key_factors': '; '.join(llm_result.get('key_factors', [])),
-                    'investment_impact': llm_result.get('investment_impact', 'neutral'),
-                    'reasoning': llm_result.get('reasoning', ''),
-                    'market_catalysts': '; '.join(llm_result.get('market_catalysts', [])),
-                    'content_length': len(full_content)
-                }
-                raw_openai_responses.append(raw_response_entry)
-                
-                if ticker not in ticker_sentiment:
-                    ticker_sentiment[ticker] = {
-                        'positive_count': 0,
-                        'negative_count': 0,
-                        'news_count': 0,
-                        'sentiment_score': 0,
-                        'content_depth': 'summary_only',
-                        'key_phrases': [],
-                        'confidence': 'low'
-                    }
-                
-                # Use LLM results
-                ticker_sentiment[ticker]['sentiment_score'] += llm_result.get('sentiment_score', 0)
-                ticker_sentiment[ticker]['news_count'] += 1
-                ticker_sentiment[ticker]['content_depth'] = 'full_article'
-                ticker_sentiment[ticker]['confidence'] = llm_result.get('confidence', 'medium')
-                
-                # Extract key factors as phrases
-                key_factors = llm_result.get('key_factors', [])
-                ticker_sentiment[ticker]['key_phrases'].extend(key_factors[:3])
-                
-                continue  # Skip keyword analysis for LLM-analyzed articles
-            
             if ticker not in ticker_sentiment:
                 ticker_sentiment[ticker] = {
                     'positive_count': 0,
@@ -422,21 +472,21 @@ def analyze_sentiment_tool(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
                     'key_phrases': [],
                     'confidence': 'low'
                 }
-            
+
             # Count sentiment keywords with context weighting
             pos_count = 0
             neg_count = 0
             key_phrases = []
-            
+
             for word in sentiment_keywords['positive']:
                 if word in analysis_text:
                     # Weight longer phrases more heavily
-                    weight = len(word.split()) 
+                    weight = len(word.split())
                     count = analysis_text.count(word) * weight
                     pos_count += count
                     if count > 0:
                         key_phrases.append(f"+{word}({count})")
-            
+
             for word in sentiment_keywords['negative']:
                 if word in analysis_text:
                     weight = len(word.split())
@@ -444,12 +494,12 @@ def analyze_sentiment_tool(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
                     neg_count += count
                     if count > 0:
                         key_phrases.append(f"-{word}({count})")
-            
+
             ticker_sentiment[ticker]['positive_count'] += pos_count
             ticker_sentiment[ticker]['negative_count'] += neg_count
             ticker_sentiment[ticker]['news_count'] += 1
             ticker_sentiment[ticker]['key_phrases'].extend(key_phrases[:5])  # Top 5 phrases
-            
+
             # Determine content depth and confidence
             if len(analysis_text) > 500:
                 ticker_sentiment[ticker]['content_depth'] = 'full_article'
@@ -457,21 +507,19 @@ def analyze_sentiment_tool(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
             elif len(analysis_text) > 100:
                 ticker_sentiment[ticker]['content_depth'] = 'enhanced_summary'
                 ticker_sentiment[ticker]['confidence'] = 'medium'
-            
+
             # Calculate weighted sentiment score
             total_signals = pos_count + neg_count
             if total_signals > 0:
                 # Weighted score considering signal strength
                 raw_score = pos_count - neg_count
                 confidence_multiplier = min(total_signals / 5, 2.0)  # Cap at 2x
-                ticker_sentiment[ticker]['sentiment_score'] = int(raw_score * confidence_multiplier)
-            else:
-                ticker_sentiment[ticker]['sentiment_score'] = 0
-        
+                ticker_sentiment[ticker]['sentiment_score'] += int(raw_score * confidence_multiplier)
+
         # Save raw OpenAI responses to CSV if any were collected
         if raw_openai_responses:
             _save_openai_responses_to_csv(raw_openai_responses)
-        
+
         return {
             "success": True,
             "sentiment_analysis": ticker_sentiment,
@@ -482,7 +530,7 @@ def analyze_sentiment_tool(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
                 "total_tickers": len(ticker_sentiment),
                 "avg_confidence": sum(1 for t in ticker_sentiment.values() if t['confidence'] == 'high') / len(ticker_sentiment) if ticker_sentiment else 0
             },
-            "message": f"Enhanced sentiment analysis completed for {len(ticker_sentiment)} tickers with {len(raw_openai_responses)} OpenAI responses saved to CSV"
+            "message": f"Enhanced sentiment analysis completed for {len(ticker_sentiment)} tickers with {len(raw_openai_responses)} OpenAI responses saved to CSV (parallel processing)"
         }
     except Exception as e:
         return {"success": False, "error": str(e)}

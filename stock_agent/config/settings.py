@@ -93,6 +93,10 @@ class RateLimitSettings:
     news_rate_limit_delay: float = field(default_factory=lambda: _get_env_float('NEWS_RATE_LIMIT_DELAY', 0.5))
     api_rate_limit_delay: float = field(default_factory=lambda: _get_env_float('API_RATE_LIMIT_DELAY', 0.1))
 
+    # OpenAI rate limit (requests per second) - adjust based on your OpenAI tier
+    # Tier 1: 1.0, Tier 2: 1.7, Tier 3: 8.0, Tier 4+: 80.0
+    openai_rate_limit: float = field(default_factory=lambda: _get_env_float('OPENAI_RATE_LIMIT', 10.0))
+
     # Retry settings
     max_retries: int = field(default_factory=lambda: _get_env_int('MAX_RETRIES', 3))
     retry_base_delay: float = field(default_factory=lambda: _get_env_float('RETRY_BASE_DELAY', 1.0))

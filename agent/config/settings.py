@@ -5,7 +5,7 @@ Loads configuration from environment variables with sensible defaults.
 Uses dataclasses for type safety and immutability.
 
 Usage:
-    from stock_agent.config import settings
+    from agent.config import settings
 
     model = settings.openai.model
     timeout = settings.rate_limit.request_timeout
@@ -141,7 +141,7 @@ class Settings:
     Main settings container - singleton pattern.
 
     Usage:
-        from stock_agent.config import settings
+        from agent.config import settings
 
         # Access nested settings
         model = settings.openai.model

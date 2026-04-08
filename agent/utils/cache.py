@@ -5,7 +5,7 @@ Provides persistent caching for expensive operations like S&P 500 data fetching.
 Uses JSON files for storage (stdlib only, no external dependencies).
 
 Usage:
-    from stock_agent.utils import get_cache
+    from agent.utils import get_cache
 
     cache = get_cache()
     value = cache.get('my_key')
@@ -28,7 +28,7 @@ import threading
 
 from .logging_config import get_logger
 
-logger = get_logger('stock_agent.cache')
+logger = get_logger('agent.cache')
 
 T = TypeVar('T')
 
@@ -276,7 +276,7 @@ def get_cache() -> FileCache:
     """
     global _cache
     if _cache is None:
-        from stock_agent.config import settings
+        from agent.config import settings
         _cache = FileCache(
             cache_dir=str(settings.cache.cache_dir),
             default_ttl=settings.cache.sp500_ttl

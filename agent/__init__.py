@@ -13,13 +13,13 @@ Main components:
 
 Example usage:
     # Dynamic query-driven agent (recommended)
-    from stock_agent.agents import GeneralStockAgent
+    from agent.agents import GeneralStockAgent
 
     agent = GeneralStockAgent()
     results = await agent.run_analysis("Give me stock recommendations")
 
     # Or use the legacy workflow agent
-    from stock_agent.agents import StockNewsADKAgent
+    from agent.agents import StockNewsADKAgent
 
     agent = StockNewsADKAgent()
     results = await agent.run_analysis()
@@ -29,7 +29,7 @@ Example usage:
 __version__ = '1.0.0'
 __author__ = 'Stock Agent Team'
 
-from stock_agent.agents import GeneralStockAgent, StockNewsADKAgent
-from stock_agent.utils.logging_config import setup_logger, get_logger
+from agent.agents import GeneralStockAgent, StockNewsADKAgent
+from agent.utils.logging_config import setup_logger, get_logger
 
 __all__ = ['GeneralStockAgent', 'StockNewsADKAgent', 'setup_logger', 'get_logger']

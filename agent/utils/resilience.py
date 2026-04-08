@@ -5,7 +5,7 @@ Provides retry logic with exponential backoff and rate limiting
 for handling API failures gracefully.
 
 Usage:
-    from stock_agent.utils import retry, get_rate_limiter
+    from agent.utils import retry, get_rate_limiter
 
     @retry(max_attempts=3, base_delay=1.0)
     def call_external_api():
@@ -24,7 +24,7 @@ from functools import wraps
 
 from .logging_config import get_logger
 
-logger = get_logger('stock_agent.resilience')
+logger = get_logger('agent.resilience')
 
 T = TypeVar('T')
 
@@ -130,7 +130,7 @@ def retry_with_config(
         def make_api_call():
             ...
     """
-    from stock_agent.config import settings
+    from agent.config import settings
 
     return retry(
         max_attempts=settings.rate_limit.max_retries,
@@ -319,7 +319,7 @@ def get_rate_limiter(
     """
     with _limiter_lock:
         if name not in _rate_limiters:
-            from stock_agent.config import settings
+            from agent.config import settings
 
             # Use configured rate or default
             if requests_per_second is None:

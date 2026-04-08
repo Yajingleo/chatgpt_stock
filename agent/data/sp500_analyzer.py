@@ -18,15 +18,15 @@ logging.getLogger('yfinance').setLevel(logging.CRITICAL)
 import pandas as pd
 import yfinance as yf
 
-from stock_agent.config import (
+from agent.config import (
     settings,
     SP500_WIKIPEDIA_URL,
     EXTRA_TICKERS,
     LIQUIDITY_HORIZONS,
 )
-from stock_agent.utils import get_logger, get_cache
+from agent.utils import get_logger, get_cache
 
-logger = get_logger('stock_agent.sp500_analyzer')
+logger = get_logger('agent.sp500_analyzer')
 
 
 def parse_args():

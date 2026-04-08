@@ -13,15 +13,15 @@ from typing import List, Dict, Any, Optional
 import pandas as pd
 import yfinance as yf
 
-from stock_agent.config import (
+from agent.config import (
     settings,
     MARKET_CAP_TRILLION,
     MARKET_CAP_BILLION,
     MARKET_CAP_MILLION,
 )
-from stock_agent.utils import get_logger, get_rate_limiter
+from agent.utils import get_logger, get_rate_limiter
 
-logger = get_logger('stock_agent.fundamentals')
+logger = get_logger('agent.fundamentals')
 
 
 class StockFundamentalData:

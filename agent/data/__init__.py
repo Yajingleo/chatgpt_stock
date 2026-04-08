@@ -8,10 +8,10 @@ This module handles all data fetching operations including:
 - SEC filings and insider trading data
 """
 
-from stock_agent.data.news_crawler import fetch_stock_news_tool, fetch_full_article_content
-from stock_agent.data.sp500_analyzer import SP500StockAnalyzer
-from stock_agent.data.fundamentals import StockFundamentalData
-from stock_agent.data.sec_filings import SECFilingsAnalyzer, InsiderTradingAnalyzer
+from agent.data.news_crawler import fetch_stock_news_tool, fetch_full_article_content
+from agent.data.sp500_analyzer import SP500StockAnalyzer
+from agent.data.fundamentals import StockFundamentalData
+from agent.data.sec_filings import SECFilingsAnalyzer, InsiderTradingAnalyzer
 
 __all__ = [
     'fetch_stock_news_tool',

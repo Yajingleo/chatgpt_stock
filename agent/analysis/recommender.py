@@ -10,11 +10,11 @@ Uses configurable thresholds for buy/sell signals.
 
 from typing import List, Dict, Any, Optional
 
-from stock_agent.config import settings, MAX_KEY_PHRASES, MAX_INSIGHTS
-from stock_agent.data.sp500_analyzer import SP500StockAnalyzer
-from stock_agent.utils import get_logger
+from agent.config import settings, MAX_KEY_PHRASES, MAX_INSIGHTS
+from agent.data.sp500_analyzer import SP500StockAnalyzer
+from agent.utils import get_logger
 
-logger = get_logger('stock_agent.recommender')
+logger = get_logger('agent.recommender')
 
 
 def get_sp500_recommendations_tool(lookback_days: Optional[int] = None) -> Dict[str, Any]:

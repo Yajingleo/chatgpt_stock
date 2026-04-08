@@ -5,7 +5,7 @@ from typing import Dict, Any
 
 # Import config if available
 try:
-    from stock_agent.config import settings, EXCLUDED_WORDS
+    from agent.config import settings, EXCLUDED_WORDS
     CONFIG_AVAILABLE = True
 except ImportError:
     CONFIG_AVAILABLE = False

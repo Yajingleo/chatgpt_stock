@@ -17,13 +17,13 @@ import json
 import os
 from typing import Dict, Any, List, Optional
 
-from stock_agent.config import settings
-from stock_agent.utils import get_logger
+from agent.config import settings
+from agent.utils import get_logger
 
 # Import modular components
-from stock_agent.data.news_crawler import fetch_stock_news_tool
-from stock_agent.analysis.sentiment import analyze_sentiment_tool
-from stock_agent.analysis.recommender import (
+from agent.data.news_crawler import fetch_stock_news_tool
+from agent.analysis.sentiment import analyze_sentiment_tool
+from agent.analysis.recommender import (
     get_sp500_recommendations_tool,
     generate_recommendations_tool
 )
@@ -52,7 +52,7 @@ class GeneralStockAgent:
     """
 
     def __init__(self):
-        self.logger = get_logger('stock_agent.general')
+        self.logger = get_logger('agent.general')
 
         # Store intermediate results to avoid passing large data through GPT
         self._cached_news_data = None

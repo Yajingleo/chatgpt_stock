@@ -17,7 +17,7 @@ from typing import Optional
 
 
 def setup_logger(
-    name: str = 'stock_agent',
+    name: str = 'agent',
     level: int = logging.INFO,
     log_dir: Optional[str] = None,
     console_output: bool = True,
@@ -27,7 +27,7 @@ def setup_logger(
     Set up a logger with both file and console handlers.
 
     Args:
-        name: Logger name (default: 'stock_agent')
+        name: Logger name (default: 'agent')
         level: Logging level (default: INFO)
         log_dir: Directory for log files (default: ./logs)
         console_output: Enable console output (default: True)
@@ -67,7 +67,7 @@ def setup_logger(
         log_path.mkdir(parents=True, exist_ok=True)
 
         # Create log file with date in filename
-        log_file = log_path / f'stock_agent_{datetime.now().strftime("%Y%m%d")}.log'
+        log_file = log_path / f'agent_{datetime.now().strftime("%Y%m%d")}.log'
 
         # Use RotatingFileHandler to prevent huge log files
         file_handler = logging.handlers.RotatingFileHandler(
@@ -83,12 +83,12 @@ def setup_logger(
     return logger
 
 
-def get_logger(name: str = 'stock_agent') -> logging.Logger:
+def get_logger(name: str = 'agent') -> logging.Logger:
     """
     Get an existing logger or create a new one with default configuration.
 
     Args:
-        name: Logger name (default: 'stock_agent')
+        name: Logger name (default: 'agent')
 
     Returns:
         Logger instance
@@ -99,7 +99,7 @@ def get_logger(name: str = 'stock_agent') -> logging.Logger:
     if not logger.handlers:
         # Read log level from settings
         try:
-            from stock_agent.config import settings
+            from agent.config import settings
             level_str = settings.logging.level.upper()
             level = getattr(logging, level_str, logging.INFO)
         except (ImportError, AttributeError):
@@ -112,7 +112,7 @@ def get_logger(name: str = 'stock_agent') -> logging.Logger:
 
 # Set up default logger on module import
 try:
-    from stock_agent.config import settings
+    from agent.config import settings
     level_str = settings.logging.level.upper()
     default_level = getattr(logging, level_str, logging.INFO)
 except (ImportError, AttributeError):

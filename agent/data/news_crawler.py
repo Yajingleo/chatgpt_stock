@@ -18,12 +18,12 @@ from typing import List, Dict, Any
 import requests
 from bs4 import BeautifulSoup
 
-from stock_agent.config import (
+from agent.config import (
     settings,
     ARTICLE_SELECTORS,
     DEFAULT_USER_AGENT,
 )
-from stock_agent.utils import (
+from agent.utils import (
     get_logger,
     retry,
     get_rate_limiter,
@@ -31,9 +31,9 @@ from stock_agent.utils import (
 )
 
 # Import existing functionality
-from stock_agent.data._legacy_crawler import StockNewsCrawler
+from agent.data._legacy_crawler import StockNewsCrawler
 
-logger = get_logger('stock_agent.news_crawler')
+logger = get_logger('agent.news_crawler')
 
 
 def fetch_full_article_content(url: str) -> str:

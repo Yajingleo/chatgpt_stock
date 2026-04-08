@@ -43,13 +43,13 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 from enum import Enum
 
-from stock_agent.config import settings
-from stock_agent.utils import get_logger
+from agent.config import settings
+from agent.utils import get_logger
 
 # Import modular components
-from stock_agent.data.news_crawler import fetch_stock_news_tool
-from stock_agent.analysis.sentiment import analyze_sentiment_tool
-from stock_agent.analysis.recommender import (
+from agent.data.news_crawler import fetch_stock_news_tool
+from agent.analysis.sentiment import analyze_sentiment_tool
+from agent.analysis.recommender import (
     get_sp500_recommendations_tool,
     generate_recommendations_tool
 )
@@ -72,7 +72,7 @@ class StockNewsADKAgent:
 
     def __init__(self, risk_tolerance: str = "moderate"):
         self.risk_tolerance = risk_tolerance
-        self.logger = get_logger('stock_agent.workflow')
+        self.logger = get_logger('agent.workflow')
         self.workflow_prompts = self._build_workflow_prompts()
         if not ADK_AVAILABLE:
             self.logger.info("ADK not available - running in simulation mode")

@@ -20,7 +20,7 @@ from datetime import datetime
 
 import pandas as pd
 
-from stock_agent.config import (
+from agent.config import (
     settings,
     POSITIVE_KEYWORDS,
     NEGATIVE_KEYWORDS,
@@ -32,9 +32,9 @@ from stock_agent.config import (
     MAX_KEY_FACTORS,
     MAX_THEMES_PER_GROUP,
 )
-from stock_agent.utils import get_logger, retry, get_rate_limiter, RetryError
+from agent.utils import get_logger, retry, get_rate_limiter, RetryError
 
-logger = get_logger('stock_agent.sentiment')
+logger = get_logger('agent.sentiment')
 
 # Optional OpenAI import
 try:

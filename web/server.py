@@ -30,7 +30,7 @@ sys.path.insert(0, str(project_root))
 
 # Import config
 try:
-    from stock_agent.config import settings
+    from agent.config import settings
     CONFIG_AVAILABLE = True
 except ImportError:
     CONFIG_AVAILABLE = False
@@ -48,7 +48,7 @@ except ImportError:
 
 # Import the stock analysis components
 try:
-    from stock_agent.agents.general_agent import GeneralStockAgent
+    from agent.agents.general_agent import GeneralStockAgent
     STOCK_AGENT_AVAILABLE = True
 except ImportError as e:
     print(f"⚠️ Stock agent import error: {e}")
@@ -77,8 +77,8 @@ from web.formatters import (
 class StockChatHandler(BaseHTTPRequestHandler):
     """HTTP request handler for the chat interface"""
     
-    def __init__(self, *args, stock_agent=None, nlp=None, chat_history=None, **kwargs):
-        self.stock_agent = stock_agent
+    def __init__(self, *args, agent=None, nlp=None, chat_history=None, **kwargs):
+        self.agent = agent
         self.nlp = nlp
         self.chat_history = chat_history or []
         super().__init__(*args, **kwargs)
@@ -184,13 +184,13 @@ class StockChatHandler(BaseHTTPRequestHandler):
                 except Exception:
                     pass
 
-            # Attach streaming log handler to capture stock_agent logs only
+            # Attach streaming log handler to capture agent logs only
             streaming_handler = StreamingLogHandler(send_log_event)
             streaming_handler.setLevel(logging.INFO)
 
-            # Only attach to stock_agent logger (not root) to avoid third-party noise
-            stock_agent_logger = logging.getLogger('stock_agent')
-            stock_agent_logger.addHandler(streaming_handler)
+            # Only attach to agent logger (not root) to avoid third-party noise
+            agent_logger = logging.getLogger('agent')
+            agent_logger.addHandler(streaming_handler)
 
             # Progress callback for status updates
             def progress_callback(step, message, log=None):
@@ -235,8 +235,8 @@ class StockChatHandler(BaseHTTPRequestHandler):
         finally:
             # Clean up: remove the streaming handler
             if streaming_handler:
-                stock_agent_logger = logging.getLogger('stock_agent')
-                stock_agent_logger.removeHandler(streaming_handler)
+                agent_logger = logging.getLogger('agent')
+                agent_logger.removeHandler(streaming_handler)
 
     async def _process_user_message_with_progress(self, message: str, progress_callback) -> str:
         """Process user message with progress updates"""
@@ -248,7 +248,7 @@ class StockChatHandler(BaseHTTPRequestHandler):
             logger.info(f"Processing query with GeneralStockAgent: {message}")
 
             # Let the GeneralStockAgent decide which tools to call
-            results = await self.stock_agent.run_analysis(
+            results = await self.agent.run_analysis(
                 message,
                 progress_callback=progress_callback
             )
@@ -269,7 +269,7 @@ class StockChatHandler(BaseHTTPRequestHandler):
             return "❌ Stock analysis system is not available."
 
         try:
-            results = await self.stock_agent.run_analysis(
+            results = await self.agent.run_analysis(
                 "Provide investment recommendations based on current stock news sentiment",
                 progress_callback=progress_callback
             )
@@ -290,7 +290,7 @@ class StockChatHandler(BaseHTTPRequestHandler):
         try:
             progress_callback("init", f"Starting analysis for {ticker}...", f"Analyzing {ticker}")
             query = f"Analyze {ticker} stock with recent news and sentiment analysis"
-            results = await self.stock_agent.run_analysis(query, progress_callback=progress_callback)
+            results = await self.agent.run_analysis(query, progress_callback=progress_callback)
 
             if not results.get('success'):
                 return f"❌ Analysis failed for {ticker}: {results.get('error', 'Unknown error')}"
@@ -306,7 +306,7 @@ class StockChatHandler(BaseHTTPRequestHandler):
             return "❌ Stock analysis system is not available."
 
         try:
-            results = await self.stock_agent.run_analysis(
+            results = await self.agent.run_analysis(
                 "Provide market overview and investment recommendations",
                 progress_callback=progress_callback
             )
@@ -333,7 +333,7 @@ class StockChatHandler(BaseHTTPRequestHandler):
             logger.info(f"Processing query with GeneralStockAgent: {message}")
 
             # Let the GeneralStockAgent decide which tools to call
-            results = await self.stock_agent.run_analysis(message)
+            results = await self.agent.run_analysis(message)
 
             if not results.get('success'):
                 return f"❌ Analysis failed: {results.get('error', 'Unknown error')}"
@@ -355,7 +355,7 @@ class StockChatHandler(BaseHTTPRequestHandler):
             return "❌ Stock analysis system is not available."
         
         try:
-            results = await self.stock_agent.run_analysis(
+            results = await self.agent.run_analysis(
                 "Provide investment recommendations based on current stock news sentiment"
             )
             
@@ -375,7 +375,7 @@ class StockChatHandler(BaseHTTPRequestHandler):
         try:
             # Create a targeted query for the specific stock
             query = f"Analyze {ticker} stock with recent news and sentiment analysis"
-            results = await self.stock_agent.run_analysis(query)
+            results = await self.agent.run_analysis(query)
             
             if not results.get('success'):
                 return f"❌ Analysis failed for {ticker}: {results.get('error', 'Unknown error')}"
@@ -399,7 +399,7 @@ class StockChatHandler(BaseHTTPRequestHandler):
             return get_market_overview_unavailable()
         
         try:
-            results = await self.stock_agent.run_analysis(
+            results = await self.agent.run_analysis(
                 "Provide market overview and investment recommendations based on current conditions"
             )
             
@@ -420,7 +420,7 @@ class StockChatHandler(BaseHTTPRequestHandler):
         try:
             ticker_list = ", ".join(tickers[:5])  # Limit to 5 tickers
             query = f"Compare and analyze these stocks: {ticker_list}"
-            results = await self.stock_agent.run_analysis(query)
+            results = await self.agent.run_analysis(query)
             
             if not results.get('success'):
                 return f"❌ Analysis failed for {ticker_list}: {results.get('error', 'Unknown error')}"
@@ -492,26 +492,26 @@ class ADKWebChatServer:
             port = port or 8080
         self.host = host
         self.port = port
-        self.stock_agent = None
+        self.agent = None
         self.nlp = NaturalLanguageProcessor()
         self.chat_history = []
         
         # Initialize stock agent (use GeneralStockAgent for dynamic query handling)
         if STOCK_AGENT_AVAILABLE:
-            self.stock_agent = GeneralStockAgent()
+            self.agent = GeneralStockAgent()
             logger.info("✅ General stock agent initialized (function calling enabled)")
         else:
             logger.warning("⚠️ Stock agent not available")
     
     def create_handler_class(self):
         """Create a handler class with injected dependencies"""
-        stock_agent = self.stock_agent
+        agent = self.agent
         nlp = self.nlp
         chat_history = self.chat_history
         
         class Handler(StockChatHandler):
             def __init__(self, *args, **kwargs):
-                super().__init__(*args, stock_agent=stock_agent, nlp=nlp, chat_history=chat_history, **kwargs)
+                super().__init__(*args, agent=agent, nlp=nlp, chat_history=chat_history, **kwargs)
         
         return Handler
     

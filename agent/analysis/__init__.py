@@ -6,8 +6,8 @@ This module contains analysis engines for:
 - Investment recommendation generation
 """
 
-from stock_agent.analysis.sentiment import analyze_sentiment_tool, SentimentAnalyzer
-from stock_agent.analysis.recommender import generate_recommendations_tool, StockRecommender
+from agent.analysis.sentiment import analyze_sentiment_tool, SentimentAnalyzer
+from agent.analysis.recommender import generate_recommendations_tool, StockRecommender
 
 __all__ = [
     'analyze_sentiment_tool',

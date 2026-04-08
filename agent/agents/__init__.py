@@ -6,8 +6,8 @@ This module contains agent implementations for stock analysis:
 - StockNewsADKAgent: Fixed workflow agent (Google ADK)
 """
 
-from stock_agent.agents.general_agent import GeneralStockAgent
-from stock_agent.agents.workflow_agent import StockNewsADKAgent, WorkflowType
+from agent.agents.general_agent import GeneralStockAgent
+from agent.agents.workflow_agent import StockNewsADKAgent, WorkflowType
 
 __all__ = [
     'GeneralStockAgent',     # Recommended: Dynamic query-driven agent

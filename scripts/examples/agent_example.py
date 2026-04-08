@@ -14,8 +14,8 @@ from datetime import datetime
 import pandas as pd
 
 # Import existing functionality
-from stock_agent.data._legacy_crawler import StockNewsCrawler
-from stock_agent.data.sp500_analyzer import SP500StockAnalyzer
+from agent.data._legacy_crawler import StockNewsCrawler
+from agent.data.sp500_analyzer import SP500StockAnalyzer
 
 class StockNewsReActAgent:
     """
@@ -221,12 +221,12 @@ class GoogleADKStockAgent:
                 {
                     "name": "get_sp500_recommendations",
                     "description": "Get recommended S&P 500 tickers based on analysis",
-                    "function": "stock_agent.data.sp500_analyzer.SP500StockAnalyzer"
+                    "function": "agent.data.sp500_analyzer.SP500StockAnalyzer"
                 },
                 {
                     "name": "fetch_stock_news",
                     "description": "Fetch recent news for given stock tickers",
-                    "function": "stock_agent.data._legacy_crawler.StockNewsCrawler"
+                    "function": "agent.data._legacy_crawler.StockNewsCrawler"
                 },
                 {
                     "name": "analyze_sentiment",

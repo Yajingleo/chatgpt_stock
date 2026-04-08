@@ -5,7 +5,7 @@ This module provides shared utilities for the stock agent system including
 logging configuration, input validation, caching, and resilience patterns.
 
 Usage:
-    from stock_agent.utils import get_logger, get_cache, retry
+    from agent.utils import get_logger, get_cache, retry
 
     logger = get_logger('my_module')
     cache = get_cache()

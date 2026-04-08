@@ -4,14 +4,14 @@ Configuration Management
 Provides centralized configuration for the Stock Agent system.
 
 Usage:
-    from stock_agent.config import settings
+    from agent.config import settings
 
     # Access configuration
     timeout = settings.rate_limit.request_timeout
     model = settings.openai.model
 
     # Access constants
-    from stock_agent.config import SP500_WIKIPEDIA_URL, POSITIVE_KEYWORDS
+    from agent.config import SP500_WIKIPEDIA_URL, POSITIVE_KEYWORDS
 """
 
 from .settings import (

@@ -9,7 +9,7 @@ from typing import List, Dict, Any, Optional
 import re
 from .logging_config import get_logger
 
-logger = get_logger('stock_agent.validators')
+logger = get_logger('agent.validators')
 
 
 class ValidationError(Exception):

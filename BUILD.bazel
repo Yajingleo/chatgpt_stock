@@ -5,10 +5,10 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
-# Main stock_agent library - aggregates all submodules
+# Main agent library - aggregates all submodules
 py_library(
-    name = "stock_agent",
-    srcs = glob(["stock_agent/**/*.py"]),
+    name = "agent",
+    srcs = glob(["agent/**/*.py"]),
     imports = ["."],
     deps = [
         requirement("pandas"),
@@ -28,7 +28,7 @@ py_library(
     srcs = glob(["web/**/*.py"]),
     imports = ["."],
     deps = [
-        ":stock_agent",
+        ":agent",
     ],
 )
 
@@ -46,7 +46,7 @@ py_binary(
     srcs = ["scripts/examples/agent_example.py"],
     main = "scripts/examples/agent_example.py",
     imports = ["."],
-    deps = [":stock_agent"],
+    deps = [":agent"],
 )
 
 py_binary(
@@ -55,7 +55,7 @@ py_binary(
     main = "scripts/launch_server.py",
     imports = ["."],
     deps = [
-        ":stock_agent",
+        ":agent",
         ":web_lib",
     ],
 )
@@ -90,7 +90,7 @@ py_binary(
 #     main = "tests/run_tests.py",  # Create this to run pytest
 #     imports = ["."],
 #     deps = [
-#         ":stock_agent",
+#         ":agent",
 #         requirement("pytest"),
 #     ],
 # )

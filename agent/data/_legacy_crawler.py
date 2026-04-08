@@ -5,10 +5,10 @@ import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Any
 
-from stock_agent.config import settings
-from stock_agent.utils import get_logger
+from agent.config import settings
+from agent.utils import get_logger
 
-logger = get_logger('stock_agent.news_crawler')
+logger = get_logger('agent.news_crawler')
 
 
 class StockNewsCrawler:
@@ -92,7 +92,7 @@ def parse_ticker_list(ticker_str: str) -> list[str]:
     return [ticker.strip().upper() for ticker in ticker_str.split(',') if ticker.strip()]
 
 if __name__ == "__main__":
-    from stock_agent.data.sp500_analyzer import SP500StockAnalyzer
+    from agent.data.sp500_analyzer import SP500StockAnalyzer
 
     # Create argument parser
     parser = argparse.ArgumentParser(description='Get stock news from Yahoo Finance')

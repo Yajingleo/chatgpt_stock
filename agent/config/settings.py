@@ -132,7 +132,7 @@ class ContentSettings:
     """Content length thresholds for text processing."""
     min_full_content_length: int = field(default_factory=lambda: _get_env_int('MIN_FULL_CONTENT_LENGTH', 500))
     max_article_text_length: int = field(default_factory=lambda: _get_env_int('MAX_ARTICLE_TEXT_LENGTH', 3000))
-    max_llm_content_length: int = field(default_factory=lambda: _get_env_int('MAX_LLM_CONTENT_LENGTH', 2000))
+    max_llm_content_length: int = field(default_factory=lambda: _get_env_int('MAX_LLM_CONTENT_LENGTH', 12000))
     max_chat_history: int = field(default_factory=lambda: _get_env_int('MAX_CHAT_HISTORY', 20))
 
 

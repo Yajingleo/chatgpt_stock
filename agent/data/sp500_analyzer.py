@@ -146,7 +146,18 @@ class SP500StockAnalyzer:
             logger.warning(f"Failed to download {failed_count} tickers, continuing with {len(downloaded_tickers)}")
         self.tickers = downloaded_tickers
 
-        self.all_data = data.fillna(0)
+        # Drop trailing rows where no ticker has a Close. yfinance's exclusive
+        # end-date handling can emit an empty row for the current day.
+        data = data.loc[data["Close"].notna().any(axis=1)]
+
+        # DailyReturn/Energy start with a legitimate NaN from .shift(1); 0 is correct there.
+        for field in ("DailyReturn", "Energy"):
+            data[field] = data[field].fillna(0)
+
+        # Prices must stay NaN if missing. A 0 Close silently becomes a -100% return.
+        data["Close"] = data["Close"].ffill()
+
+        self.all_data = data
 
         runtime_min = (time.time() - start_time) / 60
         logger.info(f"Stock data download completed in {runtime_min:.2f} minutes")
@@ -207,14 +218,19 @@ class SP500StockAnalyzer:
         if n_day == 0:
             return pd.DataFrame()
 
-        last_day_data = self.all_data.loc[self.all_data.index[-1], ["Close"]]
-        last_n_day_data = self.all_data.loc[self.all_data.index[-n_day], ["Close"]]
+        # An n-day return spans n intervals, so it needs n+1 rows of prices.
+        # Clamp when history is shorter than the requested window.
+        start_date = self.all_data.index[max(-(n_day + 1), -len(self.all_data))]
 
-        return_n_day = (last_day_data / last_n_day_data - 1).apply(lambda x: round(x, 2))
+        last_day_data = self.all_data.loc[self.all_data.index[-1], ["Close"]]
+        last_n_day_data = self.all_data.loc[start_date, ["Close"]]
+
+        # Guard the divisor so bad data surfaces as NaN rather than inf.
+        return_n_day = (last_day_data / last_n_day_data.replace(0, float("nan")) - 1).round(2)
         col_name = f"{n_day}D_Return"
         return_df = pd.DataFrame(return_n_day, columns=[col_name]).reset_index()
         return_df["Stock"] = return_df["Ticker"].replace(self.ticker_to_name)
-        return_df["Start_Date"] = self.all_data.index[-n_day]
+        return_df["Start_Date"] = start_date
         return return_df.sort_values(col_name, ascending=False).reset_index(drop=True)
 
     def analyze_stocks(

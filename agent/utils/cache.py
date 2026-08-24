@@ -20,11 +20,14 @@ Usage:
 import json
 import hashlib
 import time
+import copy
 from pathlib import Path
 from typing import Any, Optional, Callable, TypeVar
 from functools import wraps
 from dataclasses import dataclass
 import threading
+import pickle
+import tempfile
 
 from .logging_config import get_logger
 
@@ -287,3 +290,115 @@ def get_cache() -> FileCache:
 def clear_cache() -> int:
     """Clear all cached data and return count of entries removed."""
     return get_cache().clear()
+
+
+class SessionDataCache:
+    """Cache arbitrary trusted Python data for one date-based session.
+
+    Unlike :class:`FileCache`, this cache stores pickle files, allowing callers
+    to cache pandas DataFrames as well as regular Python dictionaries and lists.
+    Cache files must be treated as trusted local data and should never be copied
+    from an untrusted source.
+    """
+
+    def __init__(self, cache_dir: Path, namespace: str, default_ttl: int):
+        self.cache_dir = Path(cache_dir) / namespace / time.strftime('%Y-%m-%d')
+        self.default_ttl = default_ttl
+        self._memory_cache: dict[str, CacheEntry] = {}
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _key_text(key: Any) -> str:
+        """Convert JSON-compatible keys into a deterministic identifier."""
+        try:
+            return json.dumps(key, sort_keys=True, separators=(',', ':'), default=str)
+        except (TypeError, ValueError):
+            return repr(key)
+
+    def _cache_path(self, key: Any) -> Path:
+        key_hash = hashlib.sha256(self._key_text(key).encode()).hexdigest()
+        return self.cache_dir / f'{key_hash}.pkl'
+
+    def get(self, key: Any) -> Optional[Any]:
+        """Return a non-expired cached value, or ``None`` on a cache miss."""
+        key_text = self._key_text(key)
+        entry = self._memory_cache.get(key_text)
+        if entry is not None:
+            if not entry.is_expired:
+                logger.debug('Session cache hit (memory): %s', key_text)
+                return copy.deepcopy(entry.value)
+            del self._memory_cache[key_text]
+
+        cache_path = self._cache_path(key)
+        if not cache_path.exists():
+            return None
+
+        try:
+            with self._lock:
+                with cache_path.open('rb') as cache_file:
+                    entry = pickle.load(cache_file)
+            if not isinstance(entry, CacheEntry) or entry.is_expired:
+                return None
+            self._memory_cache[key_text] = entry
+            logger.debug('Session cache hit (file): %s', key_text)
+            return copy.deepcopy(entry.value)
+        except (EOFError, OSError, pickle.UnpicklingError, AttributeError) as exc:
+            logger.warning('Ignoring invalid session cache %s: %s', cache_path, exc)
+            return None
+
+    def set(self, key: Any, value: Any, ttl: Optional[int] = None) -> None:
+        """Store a value atomically for the remainder of its TTL."""
+        key_text = self._key_text(key)
+        entry = CacheEntry(
+            value=copy.deepcopy(value),
+            created_at=time.time(),
+            ttl=ttl if ttl is not None else self.default_ttl,
+            key=key_text,
+        )
+        cache_path = self._cache_path(key)
+        temporary_path = None
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                mode='wb', dir=cache_path.parent, prefix=f'.{cache_path.stem}-', delete=False
+            ) as cache_file:
+                temporary_path = Path(cache_file.name)
+                pickle.dump(entry, cache_file, protocol=pickle.HIGHEST_PROTOCOL)
+            temporary_path.replace(cache_path)
+            self._memory_cache[key_text] = entry
+            logger.debug('Session cache set: %s', key_text)
+        except (OSError, pickle.PicklingError, TypeError) as exc:
+            logger.warning('Unable to write session cache %s: %s', cache_path, exc)
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
+
+    def clear(self) -> int:
+        """Clear this namespace's current session files."""
+        self._memory_cache.clear()
+        if not self.cache_dir.exists():
+            return 0
+        count = 0
+        for cache_path in self.cache_dir.glob('*.pkl'):
+            try:
+                cache_path.unlink()
+                count += 1
+            except OSError as exc:
+                logger.warning('Unable to clear session cache %s: %s', cache_path, exc)
+        return count
+
+
+_session_caches: dict[tuple[str, int], SessionDataCache] = {}
+
+
+def get_session_cache(namespace: str, default_ttl: int) -> SessionDataCache:
+    """Get a shared date-scoped cache for a data-source namespace."""
+    from agent.config import settings
+
+    cache_key = (namespace, default_ttl)
+    if cache_key not in _session_caches:
+        _session_caches[cache_key] = SessionDataCache(
+            cache_dir=settings.cache.cache_dir,
+            namespace=namespace,
+            default_ttl=default_ttl,
+        )
+    return _session_caches[cache_key]

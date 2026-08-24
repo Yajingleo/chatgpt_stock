@@ -5,6 +5,7 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
+
 # Main agent library - aggregates all submodules
 py_library(
     name = "agent",
@@ -19,6 +20,8 @@ py_library(
         requirement("beautifulsoup4"),
         requirement("openai"),
         requirement("python-dotenv"),
+        "//agent/data:data",
+        "//agent/utils:utils",
     ],
 )
 

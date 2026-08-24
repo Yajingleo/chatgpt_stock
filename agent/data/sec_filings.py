@@ -5,6 +5,9 @@ from bs4 import BeautifulSoup
 import re
 from datetime import datetime, timedelta
 
+from agent.config import settings
+from agent.utils import get_session_cache
+
 class SECFilingsAnalyzer:
     """Analyze SEC filings for major customer disclosures and insider trading"""
     
@@ -16,17 +19,26 @@ class SECFilingsAnalyzer:
             'Accept-Encoding': 'gzip, deflate',
             'Host': 'www.sec.gov'
         }
+        self._cache = get_session_cache('sec_filings', settings.cache.sec_filings_ttl)
     
     def get_company_cik(self, ticker):
         """Get CIK (Central Index Key) for a company"""
         try:
+            cache_key = {'kind': 'company_cik', 'ticker': ticker.upper()}
+            cached_cik = self._cache.get(cache_key) if settings.cache.enabled else None
+            if isinstance(cached_cik, str):
+                return cached_cik
+
             url = f"https://www.sec.gov/files/company_tickers.json"
             response = requests.get(url, headers=self.headers)
             companies = response.json()
             
             for company_data in companies.values():
                 if company_data['ticker'] == ticker.upper():
-                    return str(company_data['cik_str']).zfill(10)
+                    cik = str(company_data['cik_str']).zfill(10)
+                    if settings.cache.enabled:
+                        self._cache.set(cache_key, cik)
+                    return cik
             return None
         except Exception as e:
             print(f"Error getting CIK for {ticker}: {e}")
@@ -35,6 +47,11 @@ class SECFilingsAnalyzer:
     def get_latest_10k(self, cik):
         """Get the latest 10-K filing for a company"""
         try:
+            cache_key = {'kind': 'latest_10k', 'cik': cik}
+            cached_filing = self._cache.get(cache_key) if settings.cache.enabled else None
+            if isinstance(cached_filing, dict):
+                return cached_filing
+
             url = f"https://data.sec.gov/submissions/CIK{cik}.json"
             response = requests.get(url, headers=self.headers)
             data = response.json()
@@ -43,11 +60,14 @@ class SECFilingsAnalyzer:
             filings = data['filings']['recent']
             for i, form in enumerate(filings['form']):
                 if form in ['10-K', '10-K/A']:
-                    return {
+                    filing = {
                         'accession_number': filings['accessionNumber'][i],
                         'filing_date': filings['filingDate'][i],
                         'form': form
                     }
+                    if settings.cache.enabled:
+                        self._cache.set(cache_key, filing)
+                    return filing
             return None
         except Exception as e:
             print(f"Error getting 10-K for CIK {cik}: {e}")
@@ -55,6 +75,11 @@ class SECFilingsAnalyzer:
     
     def analyze_major_customers(self, ticker) -> pd.DataFrame:
         """Extract major customer information from 10-K filings"""
+        cache_key = {'kind': 'major_customers', 'ticker': ticker.upper()}
+        cached_analysis = self._cache.get(cache_key) if settings.cache.enabled else None
+        if isinstance(cached_analysis, pd.DataFrame):
+            return cached_analysis
+
         cik = self.get_company_cik(ticker)
         if not cik:
             return pd.DataFrame()
@@ -65,12 +90,15 @@ class SECFilingsAnalyzer:
 
         # This is a simplified example - real implementation would need
         # more sophisticated text parsing
-        return pd.DataFrame({
+        analysis = pd.DataFrame({
             'ticker': [ticker],
             'cik': [cik],
             'latest_10k_date': [filing_info['filing_date']],
             'major_customers_analysis': ['Would require full text analysis of 10-K']
         })
+        if settings.cache.enabled:
+            self._cache.set(cache_key, analysis)
+        return analysis
 
 class InsiderTradingAnalyzer:
     """Analyze insider trading data from SEC Form 4 filings"""
@@ -79,11 +107,19 @@ class InsiderTradingAnalyzer:
         self.headers = {
             'User-Agent': 'Your Company Name your-email@company.com'
         }
+        self._cache = get_session_cache('sec_filings', settings.cache.sec_filings_ttl)
     
     def get_insider_trades(self, ticker, days_back=90) -> pd.DataFrame:
         """Get recent insider trading data"""
         # Using SEC EDGAR API for Form 4 filings
         try:
+            cache_key = {
+                'kind': 'insider_trades', 'ticker': ticker.upper(), 'days_back': days_back,
+            }
+            cached_trades = self._cache.get(cache_key) if settings.cache.enabled else None
+            if isinstance(cached_trades, pd.DataFrame):
+                return cached_trades
+
             cik = self.get_company_cik(ticker)
             if not cik:
                 return pd.DataFrame()
@@ -110,7 +146,10 @@ class InsiderTradingAnalyzer:
                             'size': filings['size'][i]
                         })
 
-            return pd.DataFrame(insider_trades)
+            trades = pd.DataFrame(insider_trades)
+            if settings.cache.enabled:
+                self._cache.set(cache_key, trades)
+            return trades
 
         except Exception as e:
             print(f"Error getting insider trades for {ticker}: {e}")
@@ -119,13 +158,21 @@ class InsiderTradingAnalyzer:
     def get_company_cik(self, ticker) -> str:
         """Get CIK for company"""
         try:
+            cache_key = {'kind': 'company_cik', 'ticker': ticker.upper()}
+            cached_cik = self._cache.get(cache_key) if settings.cache.enabled else None
+            if isinstance(cached_cik, str):
+                return cached_cik
+
             url = f"https://www.sec.gov/files/company_tickers.json"
             response = requests.get(url, headers=self.headers)
             companies = response.json()
             
             for company_data in companies.values():
                 if company_data['ticker'] == ticker.upper():
-                    return str(company_data['cik_str']).zfill(10)
+                    cik = str(company_data['cik_str']).zfill(10)
+                    if settings.cache.enabled:
+                        self._cache.set(cache_key, cik)
+                    return cik
             return None
         except Exception as e:
             print(f"Error getting CIK for {ticker}: {e}")
@@ -169,6 +216,12 @@ class AlternativeDataSources:
         import yfinance as yf
         
         try:
+            cache = get_session_cache('alternative_data', settings.cache.fundamentals_ttl)
+            cache_key = {'kind': 'company_relationships', 'ticker': ticker.upper()}
+            cached_relationships = cache.get(cache_key) if settings.cache.enabled else None
+            if isinstance(cached_relationships, dict):
+                return cached_relationships
+
             stock = yf.Ticker(ticker)
             info = stock.info
             
@@ -184,12 +237,15 @@ class AlternativeDataSources:
                 if any(keyword in sentence.lower() for keyword in customer_keywords):
                     potential_relationships.append(sentence.strip())
 
-            return {
+            relationships = {
                 'ticker': [ticker],
                 'company_name': [info.get('longName', ticker)],
                 'sector': [info.get('sector', 'Unknown')],
                 'business_relationships': [potential_relationships]
             }
+            if settings.cache.enabled:
+                cache.set(cache_key, relationships)
+            return relationships
             
         except Exception as e:
             print(f"Error analyzing {ticker}: {e}")

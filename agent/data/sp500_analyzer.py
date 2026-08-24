@@ -2,7 +2,7 @@
 S&P 500 Stock Analyzer
 
 Analyzes S&P 500 stocks based on energy (price movement * volume) and returns.
-Uses caching to avoid repeated API calls for ticker list.
+Uses caching to avoid repeated API calls for ticker lists and stock-price downloads.
 """
 import argparse
 from datetime import datetime, timedelta
@@ -24,7 +24,7 @@ from agent.config import (
     EXTRA_TICKERS,
     LIQUIDITY_HORIZONS,
 )
-from agent.utils import get_logger, get_cache
+from agent.utils import get_logger, get_cache, get_session_cache
 
 logger = get_logger('agent.sp500_analyzer')
 
@@ -96,6 +96,9 @@ class SP500StockAnalyzer:
             self.tickers = self.tickers[:num_stocks_to_test]
             logger.info(f"Testing mode: Processing only {len(self.tickers)} stocks")
 
+        # Keep the request identity stable even if failed tickers are removed later.
+        self._requested_tickers = tuple(self.tickers)
+        self._stock_data_cache = get_session_cache('sp500_stock_data', settings.cache.stock_data_ttl)
         self.all_data = None
         self.recommanded_tickers = None
         self.persistent_strong_stocks = None
@@ -110,7 +113,17 @@ class SP500StockAnalyzer:
         self._load_stock_data()
 
     def _load_stock_data(self):
-        """Load stock data for all tickers in a single API call."""
+        """Load stock data, reusing the current day's identical download when possible."""
+        cached_data = self._load_cached_stock_data()
+        if cached_data is not None:
+            self.all_data, self.tickers = cached_data
+            logger.info(
+                "Using cached stock data for %d stocks from %s",
+                len(self.tickers),
+                self._stock_data_cache.cache_dir,
+            )
+            return
+
         logger.info(f"Starting stock data download for {len(self.tickers)} stocks")
         start_time = time.time()
 
@@ -125,12 +138,6 @@ class SP500StockAnalyzer:
 
         if data.empty:
             raise ValueError("No stock data downloaded")
-
-        # Print raw data for debugging
-        print(f"\n=== Raw Downloaded Data ===")
-        print(f"Shape: {data.shape}")
-        print(data.head(10))
-        print(f"===========================\n")
 
         # Filter tickers to only those successfully downloaded
         downloaded_tickers = []
@@ -158,9 +165,43 @@ class SP500StockAnalyzer:
         data["Close"] = data["Close"].ffill()
 
         self.all_data = data
+        self._save_cached_stock_data(data, downloaded_tickers)
 
         runtime_min = (time.time() - start_time) / 60
         logger.info(f"Stock data download completed in {runtime_min:.2f} minutes")
+
+    def _stock_data_cache_key(self) -> dict:
+        """Return the cache key for this exact yfinance request."""
+        return {
+            "tickers": self._requested_tickers,
+            "start": self.start_date,
+            "end": self.end_date,
+            "auto_adjust": True,
+            "ignore_tz": True,
+        }
+
+    def _load_cached_stock_data(self) -> Optional[tuple[pd.DataFrame, list[str]]]:
+        """Read a fresh cache entry, returning None on a miss or invalid entry."""
+        if not settings.cache.enabled:
+            return None
+
+        cached = self._stock_data_cache.get(self._stock_data_cache_key())
+        if not isinstance(cached, dict):
+            return None
+        data, tickers = cached.get("data"), cached.get("tickers")
+        if not isinstance(data, pd.DataFrame) or not isinstance(tickers, list):
+            logger.warning("Ignoring invalid stock-data cache contents")
+            return None
+        return data, tickers
+
+    def _save_cached_stock_data(self, data: pd.DataFrame, tickers: list[str]) -> None:
+        """Atomically persist data for reuse during the current date's session."""
+        if not settings.cache.enabled:
+            return
+
+        self._stock_data_cache.set(
+            self._stock_data_cache_key(), {"data": data, "tickers": tickers}
+        )
 
     def _initialize_tickers(self) -> dict:
         """Initialize SP500 tickers with company names."""

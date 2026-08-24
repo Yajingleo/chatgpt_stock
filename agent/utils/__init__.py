@@ -1,23 +1,15 @@
-"""
-Stock Agent Utilities
-
-This module provides shared utilities for the stock agent system including
-logging configuration, input validation, caching, and resilience patterns.
-
-Usage:
-    from agent.utils import get_logger, get_cache, retry
-
-    logger = get_logger('my_module')
-    cache = get_cache()
-
-    @retry(max_attempts=3)
-    def api_call():
-        ...
-"""
+"""Shared utilities for the stock agent system."""
 
 from .logging_config import setup_logger, get_logger
 from .validators import InputValidator, ValidationError, safe_validate
-from .cache import FileCache, get_cache, clear_cache, CacheEntry
+from .cache import (
+    CacheEntry,
+    FileCache,
+    SessionDataCache,
+    clear_cache,
+    get_cache,
+    get_session_cache,
+)
 from .resilience import (
     retry,
     retry_with_config,
@@ -29,19 +21,17 @@ from .resilience import (
 )
 
 __all__ = [
-    # Logging
     'setup_logger',
     'get_logger',
-    # Validation
     'InputValidator',
     'ValidationError',
     'safe_validate',
-    # Caching
-    'FileCache',
-    'get_cache',
-    'clear_cache',
     'CacheEntry',
-    # Resilience
+    'FileCache',
+    'SessionDataCache',
+    'clear_cache',
+    'get_cache',
+    'get_session_cache',
     'retry',
     'retry_with_config',
     'RetryError',

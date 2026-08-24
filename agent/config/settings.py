@@ -109,6 +109,9 @@ class CacheSettings:
     enabled: bool = field(default_factory=lambda: _get_env_bool('ENABLE_CACHING', True))
     sp500_ttl: int = field(default_factory=lambda: _get_env_int('SP500_CACHE_TTL', 3600))
     stock_data_ttl: int = field(default_factory=lambda: _get_env_int('STOCK_DATA_CACHE_TTL', 1800))
+    news_ttl: int = field(default_factory=lambda: _get_env_int('NEWS_CACHE_TTL', 900))
+    sec_filings_ttl: int = field(default_factory=lambda: _get_env_int('SEC_FILINGS_CACHE_TTL', 86400))
+    fundamentals_ttl: int = field(default_factory=lambda: _get_env_int('FUNDAMENTALS_CACHE_TTL', 14400))
     cache_dir: Path = field(default_factory=lambda: Path(os.getenv('CACHE_DIR', '.cache')))
 
 

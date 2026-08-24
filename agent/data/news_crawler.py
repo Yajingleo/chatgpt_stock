@@ -27,6 +27,7 @@ from agent.utils import (
     get_logger,
     retry,
     get_rate_limiter,
+    get_session_cache,
     RetryError,
 )
 
@@ -47,11 +48,19 @@ def fetch_full_article_content(url: str) -> str:
         The extracted article text, truncated to max length
     """
     try:
+        cache = get_session_cache('news_articles', settings.cache.news_ttl)
+        cached_content = cache.get({'url': url}) if settings.cache.enabled else None
+        if isinstance(cached_content, str):
+            return cached_content
+
         # Use rate limiter for news fetching
         limiter = get_rate_limiter('news')
         limiter.acquire()
 
-        return _fetch_article_with_retry(url)
+        content = _fetch_article_with_retry(url)
+        if settings.cache.enabled:
+            cache.set({'url': url}, content)
+        return content
     except RetryError as e:
         logger.warning(f"All retries failed for {url}: {e}")
         return f"Could not fetch article content after retries: {str(e)[:100]}"
@@ -121,6 +130,15 @@ def fetch_stock_news_tool(
     try:
         # Limit tickers
         limited_tickers = tickers[:limit] if len(tickers) > limit else tickers
+        cache = get_session_cache('stock_news', settings.cache.news_ttl)
+        cache_key = {
+            'tickers': limited_tickers,
+            'fetch_full_content': fetch_full_content,
+        }
+        cached_result = cache.get(cache_key) if settings.cache.enabled else None
+        if isinstance(cached_result, dict):
+            logger.info('Using cached news for %d tickers', len(limited_tickers))
+            return cached_result
 
         crawler = StockNewsCrawler(limited_tickers)
         crawler.get_stock_news()
@@ -135,7 +153,7 @@ def fetch_stock_news_tool(
             enhancer = NewsContentEnhancer()
             news_data = enhancer.enhance_news_items(news_data, max_items=max_articles)
 
-        return {
+        result = {
             "success": True,
             "news_count": len(news_data),
             "tickers_analyzed": limited_tickers,
@@ -143,6 +161,9 @@ def fetch_stock_news_tool(
             "enhanced_content": fetch_full_content,
             "message": f"Fetched {len(news_data)} news items{'with full content' if fetch_full_content else ''} for {len(limited_tickers)} tickers"
         }
+        if settings.cache.enabled:
+            cache.set(cache_key, result)
+        return result
     except Exception as e:
         logger.error(f"Error fetching stock news: {e}", exc_info=True)
         return {"success": False, "error": str(e)}

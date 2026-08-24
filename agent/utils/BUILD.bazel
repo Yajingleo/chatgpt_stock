@@ -1,0 +1,24 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "utils",
+    srcs = glob(
+        ["*.py"],
+        exclude = ["*_test.py"],
+    ),
+    imports = ["../.."],
+)
+
+py_test(
+    name = "cache_test",
+    srcs = ["cache_test.py"],
+    main = "cache_test.py",
+    legacy_create_init = False,
+    imports = ["../.."],
+    deps = [
+        ":utils",
+        "//:agent",
+    ],
+)

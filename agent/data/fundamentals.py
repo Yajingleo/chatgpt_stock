@@ -19,7 +19,7 @@ from agent.config import (
     MARKET_CAP_BILLION,
     MARKET_CAP_MILLION,
 )
-from agent.utils import get_logger, get_rate_limiter
+from agent.utils import get_logger, get_rate_limiter, get_session_cache
 
 logger = get_logger('agent.fundamentals')
 
@@ -30,6 +30,7 @@ class StockFundamentalData:
     def __init__(self):
         """Initialize the data fetcher with an empty cache."""
         self.cache: Dict[str, Dict[str, Any]] = {}
+        self._persistent_cache = get_session_cache('fundamentals', settings.cache.fundamentals_ttl)
         self._rate_limiter = get_rate_limiter('yfinance', requests_per_second=5.0)
 
     def get_stock_info(self, ticker: str) -> Dict[str, Any]:
@@ -44,6 +45,13 @@ class StockFundamentalData:
         """
         if ticker in self.cache:
             return self.cache[ticker]
+
+        cache_key = {'ticker': ticker.upper()}
+        cached_data = self._persistent_cache.get(cache_key) if settings.cache.enabled else None
+        if isinstance(cached_data, dict):
+            self.cache[ticker] = cached_data
+            logger.info(f"Using cached fundamental data for {ticker}")
+            return cached_data
 
         try:
             # Rate limit yfinance API calls
@@ -83,6 +91,8 @@ class StockFundamentalData:
 
             # Cache the result
             self.cache[ticker] = stock_data
+            if settings.cache.enabled:
+                self._persistent_cache.set(cache_key, stock_data)
             logger.info(f"Retrieved data for {ticker}: {stock_data['full_name']}")
 
             return stock_data
@@ -146,6 +156,8 @@ class StockFundamentalData:
     def clear_cache(self) -> None:
         """Clear the cached stock data."""
         self.cache.clear()
+        if settings.cache.enabled:
+            self._persistent_cache.clear()
         logger.debug("Fundamental data cache cleared")
 
 

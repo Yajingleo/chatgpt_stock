@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 """
-Demo of GeneralStockAgent using OpenAI function calling.
-
-This agent dynamically decides which tools to call based on the user's query,
-unlike the traditional workflow-based agent.
+Demo of the provider-neutral stock analysis orchestrator.
 
 Usage:
     python examples/general_agent_demo.py
@@ -17,13 +14,13 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from agent.agents.general_agent import GeneralStockAgent
+from agent import Orchestrator
 
 
 async def demo():
     """Run demo queries with the general agent"""
 
-    agent = GeneralStockAgent()
+    agent = Orchestrator.from_settings()
 
     # Example queries that will trigger different tool combinations
     queries = [
@@ -34,7 +31,7 @@ async def demo():
     ]
 
     print("=" * 60)
-    print("GeneralStockAgent Demo")
+    print("Stock Orchestrator Demo")
     print("=" * 60)
     print()
 
@@ -43,7 +40,7 @@ async def demo():
         print(f"Query: {query}")
         print(f"{'=' * 60}\n")
 
-        result = await agent.run_analysis(query)
+        result = await agent.run(query)
 
         if result["success"]:
             print(f"Answer ({result['iterations']} iterations):")

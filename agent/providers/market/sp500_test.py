@@ -15,7 +15,7 @@ class InMemoryCache:
 
 
 def analyzer(cache):
-    from agent.data.sp500_analyzer import SP500StockAnalyzer
+    from agent.providers.market.sp500 import SP500StockAnalyzer
     result = object.__new__(SP500StockAnalyzer)
     result.tickers, result._requested_tickers = ['AAA'], ('AAA',)
     result.start_date, result.end_date = '2025-08-24', '2026-08-24'
@@ -25,7 +25,7 @@ def analyzer(cache):
 
 class SP500AnalyzerCacheTest(unittest.TestCase):
     def test_download_is_reused_from_session_cache(self):
-        from agent.data import sp500_analyzer
+        from agent.providers.market import sp500 as sp500_analyzer
         cache, calls = InMemoryCache(), []
         columns = pd.MultiIndex.from_tuples([('Close', 'AAA'), ('Volume', 'AAA')])
         downloaded = pd.DataFrame([[10.0, 100], [11.0, 150]], index=pd.date_range('2026-08-20', periods=2), columns=columns)

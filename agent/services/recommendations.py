@@ -11,7 +11,7 @@ Uses configurable thresholds for buy/sell signals.
 from typing import List, Dict, Any, Optional
 
 from agent.config import settings, MAX_KEY_PHRASES, MAX_INSIGHTS
-from agent.data.sp500_analyzer import SP500StockAnalyzer
+from agent.providers.market.sp500 import SP500StockAnalyzer
 from agent.utils import get_logger
 
 logger = get_logger('agent.recommender')

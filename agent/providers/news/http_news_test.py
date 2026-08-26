@@ -15,7 +15,7 @@ class InMemoryCache:
 
 class NewsCrawlerCacheTest(unittest.TestCase):
     def test_reuses_cached_result(self):
-        from agent.data import news_crawler
+        from agent.providers.news import http_news as news_crawler
         cache, calls = InMemoryCache(), []
         class FakeCrawler:
             def __init__(self, tickers):

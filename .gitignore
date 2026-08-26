@@ -54,6 +54,7 @@ Thumbs.db
 
 # Cache
 .cache/
+.memory/
 
 # Testing
 .pytest_cache/

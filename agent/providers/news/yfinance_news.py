@@ -92,7 +92,7 @@ def parse_ticker_list(ticker_str: str) -> list[str]:
     return [ticker.strip().upper() for ticker in ticker_str.split(',') if ticker.strip()]
 
 if __name__ == "__main__":
-    from agent.data.sp500_analyzer import SP500StockAnalyzer
+    from agent.providers.market.sp500 import SP500StockAnalyzer
 
     # Create argument parser
     parser = argparse.ArgumentParser(description='Get stock news from Yahoo Finance')

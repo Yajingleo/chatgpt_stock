@@ -18,6 +18,7 @@ from .settings import (
     settings,
     Settings,
     OpenAISettings,
+    ModelSettings,
     AnalysisSettings,
     ProcessingSettings,
     RateLimitSettings,
@@ -25,6 +26,7 @@ from .settings import (
     ServerSettings,
     LoggingSettings,
     ContentSettings,
+    MemorySettings,
 )
 
 from .constants import (
@@ -64,6 +66,7 @@ __all__ = [
     'settings',
     'Settings',
     'OpenAISettings',
+    'ModelSettings',
     'AnalysisSettings',
     'ProcessingSettings',
     'RateLimitSettings',
@@ -71,6 +74,7 @@ __all__ = [
     'ServerSettings',
     'LoggingSettings',
     'ContentSettings',
+    'MemorySettings',
     # Constants
     'SP500_WIKIPEDIA_URL',
     'DEFAULT_USER_AGENT',

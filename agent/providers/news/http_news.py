@@ -32,7 +32,7 @@ from agent.utils import (
 )
 
 # Import existing functionality
-from agent.data._legacy_crawler import StockNewsCrawler
+from agent.providers.news.yfinance_news import StockNewsCrawler
 
 logger = get_logger('agent.news_crawler')
 

@@ -13,7 +13,7 @@ class InMemoryCache:
 
 class SECFilingsCacheTest(unittest.TestCase):
     def test_cik_lookup_reuses_cached_result(self):
-        from agent.data import sec_filings
+        from agent.providers.sec import edgar as sec_filings
         cache, calls = InMemoryCache(), []
         settings = SimpleNamespace(cache=SimpleNamespace(enabled=True, sec_filings_ttl=60, fundamentals_ttl=60))
         response = lambda *args, **kwargs: calls.append(args[0]) or SimpleNamespace(json=lambda: {'0': {'ticker': 'ABC', 'cik_str': 123}})

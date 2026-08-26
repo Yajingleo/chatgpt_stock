@@ -13,7 +13,7 @@ class InMemoryCache:
 
 class FundamentalsCacheTest(unittest.TestCase):
     def test_reuses_persistent_cache(self):
-        from agent.data import fundamentals
+        from agent.providers.market import fundamentals
         cache, calls = InMemoryCache(), []
         with patch.object(fundamentals, 'get_session_cache', lambda *args: cache), \
              patch.object(fundamentals, 'get_rate_limiter', lambda *args, **kwargs: SimpleNamespace(acquire=lambda: None)), \

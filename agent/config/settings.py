@@ -63,6 +63,20 @@ class OpenAISettings:
 
 
 @dataclass(frozen=True)
+class ModelSettings:
+    """Single-orchestrator model selection."""
+    provider: str = field(default_factory=lambda: os.getenv('MODEL_PROVIDER', 'openai'))
+    name: str = field(default_factory=lambda: os.getenv(
+        'MODEL_NAME', os.getenv('OPENAI_MODEL', 'gpt-3.5-turbo')
+    ))
+    temperature: float = field(default_factory=lambda: _get_env_float('MODEL_TEMPERATURE', 0.1))
+    google_api_key: Optional[str] = field(default_factory=lambda: os.getenv('GOOGLE_API_KEY'))
+    anthropic_api_key: Optional[str] = field(default_factory=lambda: os.getenv('ANTHROPIC_API_KEY'))
+    deepseek_api_key: Optional[str] = field(default_factory=lambda: os.getenv('DEEPSEEK_API_KEY'))
+    deepseek_base_url: str = field(default_factory=lambda: os.getenv('DEEPSEEK_BASE_URL', 'https://api.deepseek.com'))
+
+
+@dataclass(frozen=True)
 class AnalysisSettings:
     """Stock analysis configuration."""
     lookback_days: int = field(default_factory=lambda: _get_env_int('LOOKBACK_DAYS', 30))
@@ -139,6 +153,14 @@ class ContentSettings:
     max_chat_history: int = field(default_factory=lambda: _get_env_int('MAX_CHAT_HISTORY', 20))
 
 
+@dataclass(frozen=True)
+class MemorySettings:
+    """Analysis-memory persistence configuration."""
+    enabled: bool = field(default_factory=lambda: _get_env_bool('MEMORY_ENABLED', True))
+    directory: Path = field(default_factory=lambda: Path(os.getenv('MEMORY_DIR', '.memory/analysis')))
+    search_limit: int = field(default_factory=lambda: _get_env_int('MEMORY_SEARCH_LIMIT', 10))
+
+
 class Settings:
     """
     Main settings container - singleton pattern.
@@ -161,6 +183,7 @@ class Settings:
     def _initialize(self) -> None:
         """Initialize all settings groups."""
         self.openai = OpenAISettings()
+        self.model = ModelSettings()
         self.analysis = AnalysisSettings()
         self.processing = ProcessingSettings()
         self.rate_limit = RateLimitSettings()
@@ -168,6 +191,7 @@ class Settings:
         self.server = ServerSettings()
         self.logging = LoggingSettings()
         self.content = ContentSettings()
+        self.memory = MemorySettings()
 
     def reload(self) -> None:
         """Reload settings from environment (useful for testing)."""

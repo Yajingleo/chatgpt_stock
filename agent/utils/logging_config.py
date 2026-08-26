@@ -61,7 +61,7 @@ def setup_logger(
     if file_output:
         if log_dir is None:
             # Default to ./logs directory
-            log_dir = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'logs')
+            log_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'logs')
 
         log_path = Path(log_dir)
         log_path.mkdir(parents=True, exist_ok=True)

@@ -20,7 +20,6 @@ py_library(
         requirement("beautifulsoup4"),
         requirement("openai"),
         requirement("python-dotenv"),
-        "//agent/data:data",
         "//agent/utils:utils",
     ],
 )
@@ -42,6 +41,30 @@ py_binary(
     imports = ["."],
     deps = [":web_lib"],
 )
+
+py_test(
+    name = "agent_orchestration_test",
+    srcs = ["tests/agent_orchestration_test.py"],
+    main = "tests/agent_orchestration_test.py",
+    imports = ["."],
+    deps = [":agent"],
+)
+
+[
+    py_test(
+        name = test_name,
+        srcs = [test_source],
+        main = test_source,
+        imports = ["."],
+        deps = [":agent"],
+    )
+    for test_name, test_source in [
+        ("fundamentals_cache_test", "agent/providers/market/fundamentals_test.py"),
+        ("sp500_cache_test", "agent/providers/market/sp500_test.py"),
+        ("news_cache_test", "agent/providers/news/http_news_test.py"),
+        ("sec_cache_test", "agent/providers/sec/edgar_test.py"),
+    ]
+]
 
 # Example scripts
 py_binary(

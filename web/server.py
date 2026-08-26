@@ -48,7 +48,7 @@ except ImportError:
 
 # Import the stock analysis components
 try:
-    from agent.agents.general_agent import GeneralStockAgent
+    from agent import Orchestrator
     STOCK_AGENT_AVAILABLE = True
 except ImportError as e:
     print(f"⚠️ Stock agent import error: {e}")
@@ -241,14 +241,13 @@ class StockChatHandler(BaseHTTPRequestHandler):
     async def _process_user_message_with_progress(self, message: str, progress_callback) -> str:
         """Process user message with progress updates"""
         try:
-            # Route all queries to GeneralStockAgent for dynamic function calling
+            # Route all queries through the provider-neutral orchestrator.
             if not STOCK_AGENT_AVAILABLE:
                 return "❌ Stock analysis system is not available."
 
-            logger.info(f"Processing query with GeneralStockAgent: {message}")
+            logger.info(f"Processing query with Orchestrator: {message}")
 
-            # Let the GeneralStockAgent decide which tools to call
-            results = await self.agent.run_analysis(
+            results = await self.agent.run(
                 message,
                 progress_callback=progress_callback
             )
@@ -269,7 +268,7 @@ class StockChatHandler(BaseHTTPRequestHandler):
             return "❌ Stock analysis system is not available."
 
         try:
-            results = await self.agent.run_analysis(
+            results = await self.agent.run(
                 "Provide investment recommendations based on current stock news sentiment",
                 progress_callback=progress_callback
             )
@@ -290,7 +289,7 @@ class StockChatHandler(BaseHTTPRequestHandler):
         try:
             progress_callback("init", f"Starting analysis for {ticker}...", f"Analyzing {ticker}")
             query = f"Analyze {ticker} stock with recent news and sentiment analysis"
-            results = await self.agent.run_analysis(query, progress_callback=progress_callback)
+            results = await self.agent.run(query, progress_callback=progress_callback)
 
             if not results.get('success'):
                 return f"❌ Analysis failed for {ticker}: {results.get('error', 'Unknown error')}"
@@ -306,7 +305,7 @@ class StockChatHandler(BaseHTTPRequestHandler):
             return "❌ Stock analysis system is not available."
 
         try:
-            results = await self.agent.run_analysis(
+            results = await self.agent.run(
                 "Provide market overview and investment recommendations",
                 progress_callback=progress_callback
             )
@@ -326,14 +325,13 @@ class StockChatHandler(BaseHTTPRequestHandler):
             if message.lower().strip() in ['help', '/help', '?']:
                 return self._get_help_response()
 
-            # Route all other queries to GeneralStockAgent for dynamic function calling
+            # Route all other queries through the provider-neutral orchestrator.
             if not STOCK_AGENT_AVAILABLE:
                 return "❌ Stock analysis system is not available."
 
-            logger.info(f"Processing query with GeneralStockAgent: {message}")
+            logger.info(f"Processing query with Orchestrator: {message}")
 
-            # Let the GeneralStockAgent decide which tools to call
-            results = await self.agent.run_analysis(message)
+            results = await self.agent.run(message)
 
             if not results.get('success'):
                 return f"❌ Analysis failed: {results.get('error', 'Unknown error')}"
@@ -355,7 +353,7 @@ class StockChatHandler(BaseHTTPRequestHandler):
             return "❌ Stock analysis system is not available."
         
         try:
-            results = await self.agent.run_analysis(
+            results = await self.agent.run(
                 "Provide investment recommendations based on current stock news sentiment"
             )
             
@@ -375,7 +373,7 @@ class StockChatHandler(BaseHTTPRequestHandler):
         try:
             # Create a targeted query for the specific stock
             query = f"Analyze {ticker} stock with recent news and sentiment analysis"
-            results = await self.agent.run_analysis(query)
+            results = await self.agent.run(query)
             
             if not results.get('success'):
                 return f"❌ Analysis failed for {ticker}: {results.get('error', 'Unknown error')}"
@@ -399,7 +397,7 @@ class StockChatHandler(BaseHTTPRequestHandler):
             return get_market_overview_unavailable()
         
         try:
-            results = await self.agent.run_analysis(
+            results = await self.agent.run(
                 "Provide market overview and investment recommendations based on current conditions"
             )
             
@@ -420,7 +418,7 @@ class StockChatHandler(BaseHTTPRequestHandler):
         try:
             ticker_list = ", ".join(tickers[:5])  # Limit to 5 tickers
             query = f"Compare and analyze these stocks: {ticker_list}"
-            results = await self.agent.run_analysis(query)
+            results = await self.agent.run(query)
             
             if not results.get('success'):
                 return f"❌ Analysis failed for {ticker_list}: {results.get('error', 'Unknown error')}"
@@ -496,10 +494,10 @@ class ADKWebChatServer:
         self.nlp = NaturalLanguageProcessor()
         self.chat_history = []
         
-        # Initialize stock agent (use GeneralStockAgent for dynamic query handling)
+        # Initialize the provider-neutral stock orchestrator.
         if STOCK_AGENT_AVAILABLE:
-            self.agent = GeneralStockAgent()
-            logger.info("✅ General stock agent initialized (function calling enabled)")
+            self.agent = Orchestrator.from_settings()
+            logger.info("✅ Stock orchestrator initialized (tool calling enabled)")
         else:
             logger.warning("⚠️ Stock agent not available")
     

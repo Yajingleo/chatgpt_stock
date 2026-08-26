@@ -27,7 +27,7 @@ print(f"3. settings.openai.api_key present: {bool(settings.openai.api_key)}")
 print(f"   settings.openai.model: {settings.openai.model}")
 
 # 4. Does the sentiment module think OpenAI is available?
-from agent.analysis import sentiment as sm
+from agent.services import sentiment as sm
 print(f"4. sentiment.OPENAI_AVAILABLE: {sm.OPENAI_AVAILABLE}")
 
 # 5. Would analyze_article_with_llm use OpenAI or simulation?

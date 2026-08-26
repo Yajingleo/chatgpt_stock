@@ -16,21 +16,16 @@ A comprehensive AI-powered stock analysis system with sentiment analysis, news c
 
 ```
 chatgpt_stock/
-├── stock_agent/              # Main package
-│   ├── agents/               # Agent orchestration
-│   │   └── main_agent.py    # Main orchestrator
-│   ├── data/                 # Data fetching modules
-│   │   ├── news_crawler.py  # News fetching
-│   │   ├── fundamentals.py  # Stock fundamentals
-│   │   ├── sp500_analyzer.py # S&P 500 analysis
-│   │   └── sec_filings.py   # SEC & insider trading
-│   ├── analysis/             # Analysis engines
-│   │   ├── sentiment.py     # Sentiment analysis
-│   │   └── recommender.py   # Recommendation engine
+├── agent/                    # Main package
+│   ├── orchestration/        # Public orchestrator and model/tool loop
+│   ├── providers/            # AI, market, news, SEC, and memory adapters
+│   ├── services/             # Stock analysis and recommendation logic
+│   ├── tools/                # Tool registry, schemas, and adapters
+│   ├── domain/               # Provider-neutral boundary models
 │   ├── utils/                # Utilities
 │   │   ├── logging_config.py
 │   │   └── validators.py
-│   └── config/               # Configuration (Phase 2)
+│   └── config/               # Environment-backed configuration
 ├── web/                      # Web interface
 │   └── server.py            # Chat server
 ├── scripts/                  # Launch scripts
@@ -57,7 +52,7 @@ cp .env.example .env
 
 3. **Verify installation:**
 ```bash
-python3 -c "from stock_agent.agents.main_agent import StockNewsADKAgent; print('✅ Setup complete')"
+python3 -c "from agent import Orchestrator; print('✅ Setup complete')"
 ```
 
 ## Usage
@@ -78,16 +73,14 @@ python -m web.server
 
 ```python
 import asyncio
-from stock_agent.agents.main_agent import StockNewsADKAgent
+from agent import Orchestrator
 
 # Create agent
-agent = StockNewsADKAgent()
+agent = Orchestrator.from_settings()
 
 # Run analysis
-results = asyncio.run(agent.run_analysis())
-
-# Display results
-agent.display_results(results)
+results = asyncio.run(agent.run("Analyze AAPL using recent news and market data"))
+print(results["answer"] if results["success"] else results["error"])
 ```
 
 ### Natural Language Queries (Web UI)
@@ -109,7 +102,13 @@ agent.display_results(results)
 
 All configuration is managed through environment variables (`.env` file):
 
-- `OPENAI_API_KEY`: OpenAI API key for sentiment analysis (optional, has fallback)
+- `MODEL_PROVIDER`: `google_adk`, `openai`, `anthropic`, or `deepseek`
+- `MODEL_NAME`: Model identifier for the selected provider
+- Provider API key, such as `GOOGLE_API_KEY` or `OPENAI_API_KEY`
+
+The default provider is OpenAI because it is included in `requirements.txt`.
+Google ADK, Anthropic, and DeepSeek support is optional and must be configured
+explicitly with the matching package and API key.
 - `LOOKBACK_DAYS`: Days of historical data (default: 30)
 - `LOG_LEVEL`: Logging level (DEBUG, INFO, WARNING, ERROR)
 

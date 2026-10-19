@@ -113,7 +113,7 @@ def generate_recommendations_tool(sentiment_analysis: Dict[str, Any]) -> Dict[st
             recommendations.append(recommendation)
 
         # Sort by absolute sentiment score (strongest signals first)
-        recommendations.sort(key=lambda x: abs(x['sentiment_score']), reverse=True)
+        recommendations.sort(key=lambda x: (-abs(x['sentiment_score']), x['ticker']))
 
         # Calculate quality metrics
         analysis_quality = _calculate_analysis_quality(recommendations)
@@ -216,7 +216,9 @@ def generate_advanced_recommendations(
             recommendations.append(recommendation)
 
         # Sort by score and confidence
-        recommendations.sort(key=lambda x: (abs(x['sentiment_score']), x['news_count']), reverse=True)
+        recommendations.sort(
+            key=lambda x: (-abs(x['sentiment_score']), -x['news_count'], x['ticker'])
+        )
 
         analysis_quality = _calculate_analysis_quality(recommendations)
 

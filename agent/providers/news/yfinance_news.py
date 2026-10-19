@@ -74,7 +74,11 @@ class StockNewsCrawler:
 
         # Convert to DataFrame
         if all_news:
-            self.news_df = pd.DataFrame(all_news)
+            self.news_df = pd.DataFrame(all_news).sort_values(
+                by=['Ticker', 'PublishedTime', 'Title'],
+                ascending=[True, False, True],
+                kind='stable',
+            ).reset_index(drop=True)
 
         logger.info(f"Total news fetched: {len(self.news_df)} articles from {len(self.tickers)} tickers")
 
@@ -109,12 +113,8 @@ if __name__ == "__main__":
     print(f"SP500 recommended tickers: {sp_500_tickers}")
 
     # Combine user tickers with SP500 recommended tickers
-    all_tickers = list(set(args.tickers + sp_500_tickers))
-    print(f"Fetching news for tickers: {all_tickers}")      
+    all_tickers = list(dict.fromkeys(args.tickers + sp_500_tickers))
+    print(f"Fetching news for tickers: {all_tickers}")
     crawler = StockNewsCrawler(all_tickers)
     crawler.get_stock_news()
     crawler.save_news_to_csv(dirname="report", filename="stock_news.csv")
-
-
-    
-   

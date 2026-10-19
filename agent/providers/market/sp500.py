@@ -294,7 +294,12 @@ class SP500StockAnalyzer:
         self.top_return = self._get_n_days_return(lookback_days)[:top_n]
         self.bottom_return = self._get_n_days_return(lookback_days)[-top_n:]
 
-        self.recommanded_tickers = list(set(self.top_energy.Ticker) | set(self.top_return.Ticker))
+        # Preserve the ranking order. A set union makes this list vary between
+        # Python processes, which is especially harmful because downstream news
+        # analysis only processes the first configured number of tickers.
+        self.recommanded_tickers = list(dict.fromkeys(
+            list(self.top_energy.Ticker) + list(self.top_return.Ticker)
+        ))
 
         return self.top_energy, self.bottom_energy, self.top_return, self.bottom_return
 

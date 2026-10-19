@@ -135,6 +135,15 @@ class SP500KlineTest(unittest.TestCase):
         self.assertEqual(len(recent.axes[0].patches), 0)
         self.assertIn('1 trading sessions', recent.axes[0].get_title())
 
+    def test_volume_panel_is_added_when_volume_is_loaded(self):
+        data = self.subject.all_data.copy()
+        data[('Volume', 'AAA')] = [100, 200, 300, 400]
+        figure = self.plotter.plot(data, 'AAA', days=3)
+        price_ax, volume_ax = figure.axes
+        self.assertEqual([p.get_height() for p in volume_ax.patches], [100, 200, 300])
+        self.assertEqual(len(price_ax.patches), 2)
+        self.assertEqual(len(self.plotter.plot(self.subject.all_data, 'AAA').axes), 1)
+
     def test_invalid_input_has_clear_errors(self):
         for days in (0, -1):
             with self.assertRaisesRegex(ValueError, 'positive integer'):

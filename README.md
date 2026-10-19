@@ -140,7 +140,9 @@ figure = KlinePlotter().plot(data.all_data, "AAPL", days=60,
 ```
 
 `KlinePlotter` only renders the supplied OHLC DataFrame; it does not fetch data
-or manage caches. Omit `output_path` to return the figure without saving it.
+or manage caches. If the DataFrame also has a `Volume` column for the ticker, a
+volume panel is drawn under the candles. Omit `output_path` to return the figure
+without saving it.
 The runtime's plotting method is a Python API, not a registered model tool.
 
 ```python

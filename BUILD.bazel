@@ -43,6 +43,14 @@ py_binary(
 )
 
 py_test(
+    name = "web_server_test",
+    srcs = ["tests/web_server_test.py"],
+    main = "tests/web_server_test.py",
+    imports = ["."],
+    deps = [":web_lib"],
+)
+
+py_test(
     name = "agent_orchestration_test",
     srcs = ["tests/agent_orchestration_test.py"],
     main = "tests/agent_orchestration_test.py",

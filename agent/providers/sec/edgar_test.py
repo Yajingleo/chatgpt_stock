@@ -23,6 +23,8 @@ class SECFilingsCacheTest(unittest.TestCase):
             analyzer = sec_filings.SECFilingsAnalyzer()
             self.assertEqual(analyzer.get_company_cik('ABC'), '0000000123')
             self.assertEqual(analyzer.get_company_cik('ABC'), '0000000123')
+            insider = sec_filings.InsiderTradingAnalyzer()
+            self.assertEqual(insider.get_company_cik('abc'), '0000000123')
         self.assertEqual(len(calls), 1)
 
 

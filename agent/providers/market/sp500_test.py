@@ -2,6 +2,8 @@
 
 from types import SimpleNamespace
 import unittest
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 import pandas as pd
@@ -55,6 +57,93 @@ class SP500AnalyzerCacheTest(unittest.TestCase):
         result.analyze_stocks(lookback_days=30, top_n=3)
 
         self.assertEqual(['AAA', 'BBB', 'CCC', 'DDD'], result.get_recommanded_tickers())
+
+
+class AgentRuntimeTest(unittest.TestCase):
+    def test_analysis_and_plotting_share_one_lazy_object(self):
+        from unittest.mock import Mock
+        from agent.runtime import AgentRuntime
+        from agent.providers.market.yfinance_provider import YFinanceMarketProvider
+        data = Mock(all_data=pd.DataFrame())
+        data.get_recommanded_tickers.return_value = ['AAA']
+        factory, plotter = Mock(return_value=data), Mock()
+        runtime = AgentRuntime(analyzer_factory=factory, plotter=plotter)
+        factory.assert_not_called()
+        self.assertEqual(YFinanceMarketProvider(runtime).momentum_tickers(30), ['AAA'])
+        runtime.plot_kline('AAA', days=10)
+        self.assertIs(runtime.sp500, data)
+        factory.assert_called_once_with()
+        plotter.plot.assert_called_once_with(data.all_data, 'AAA', days=10, output_path=None)
+
+    def test_runtime_reloads_after_ttl_or_date_change(self):
+        from unittest.mock import Mock
+        from agent.runtime import AgentRuntime
+        runtime = AgentRuntime(analyzer_factory=Mock(side_effect=[object(), object(), object()]))
+        first = runtime.sp500
+        runtime._loaded_at = float('-inf')
+        second = runtime.sp500
+        self.assertIsNot(first, second)
+        runtime._loaded_date = None
+        self.assertIsNot(second, runtime.sp500)
+
+    def test_new_runtime_restores_prices_from_file_without_download(self):
+        from agent.runtime import AgentRuntime
+        from agent.utils.cache import SessionDataCache
+        from agent.providers.market import sp500
+        columns = pd.MultiIndex.from_product([['Open', 'High', 'Low', 'Close', 'Volume'], ['AAA']])
+        prices = pd.DataFrame([[10, 12, 9, 11, 100]],
+                              index=pd.date_range('2026-08-20', periods=1), columns=columns)
+        with tempfile.TemporaryDirectory() as directory:
+            def factory():
+                # Separate cache instances force the second load to read disk.
+                result = analyzer(SessionDataCache(Path(directory), 'prices', 3600))
+                result._load_stock_data()
+                return result
+            with patch.object(sp500, 'settings', SimpleNamespace(cache=SimpleNamespace(enabled=True))), \
+                    patch.object(sp500.yf, 'download', return_value=prices) as download:
+                first = AgentRuntime(analyzer_factory=factory).sp500
+                second = AgentRuntime(analyzer_factory=factory).sp500
+            download.assert_called_once()
+            pd.testing.assert_frame_equal(first.all_data, second.all_data)
+
+
+class SP500KlineTest(unittest.TestCase):
+    def setUp(self):
+        from agent.plotting import KlinePlotter
+        self.plotter = KlinePlotter()
+        self.subject = analyzer(InMemoryCache())
+        columns = pd.MultiIndex.from_product([['Open', 'High', 'Low', 'Close'], ['AAA']])
+        self.subject.all_data = pd.DataFrame(
+            [[10, 13, 9, 12], [12, 14, 10, 11], [11, 12, 10, 11],
+             [float('nan'), 12, 10, 11]],
+            index=pd.date_range('2026-08-20', periods=4), columns=columns,
+        )
+
+    def test_candles_use_ohlc_and_skip_incomplete_sessions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'charts' / 'AAA.png'
+            figure = self.plotter.plot(self.subject.all_data, 'aaa', days=3, output_path=path)
+            self.assertTrue(path.read_bytes().startswith(b'\x89PNG'))
+        ax = figure.axes[0]
+        self.assertEqual(len(ax.patches), 2)  # The doji is a horizontal line.
+        self.assertEqual([p.get_height() for p in ax.patches], [2, 1])
+        self.assertEqual([p.get_y() for p in ax.patches], [10, 11])
+        self.assertEqual(list(ax.collections[0].get_segments()[0][:, 1]), [9, 13])
+        self.assertIn('2026-08-22', [label.get_text() for label in ax.get_xticklabels()])
+        self.assertNotIn('2026-08-23', [label.get_text() for label in ax.get_xticklabels()])
+        recent = self.plotter.plot(self.subject.all_data, 'AAA', days=1)
+        self.assertEqual(len(recent.axes[0].patches), 0)
+        self.assertIn('1 trading sessions', recent.axes[0].get_title())
+
+    def test_invalid_input_has_clear_errors(self):
+        for days in (0, -1):
+            with self.assertRaisesRegex(ValueError, 'positive integer'):
+                self.plotter.plot(self.subject.all_data, 'AAA', days=days)
+        with self.assertRaisesRegex(ValueError, 'No loaded price data'):
+            self.plotter.plot(self.subject.all_data, 'UNKNOWN')
+        self.subject.all_data = self.subject.all_data.astype(float) * float('nan')
+        with self.assertRaisesRegex(ValueError, 'No complete OHLC'):
+            self.plotter.plot(self.subject.all_data, 'AAA')
 
 
 if __name__ == '__main__': unittest.main()

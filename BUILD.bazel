@@ -15,6 +15,7 @@ py_library(
         requirement("pandas"),
         requirement("numpy"),
         requirement("scipy"),
+        requirement("matplotlib"),
         requirement("yfinance"),
         requirement("requests"),
         requirement("beautifulsoup4"),

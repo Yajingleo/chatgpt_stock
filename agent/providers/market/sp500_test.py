@@ -38,5 +38,23 @@ class SP500AnalyzerCacheTest(unittest.TestCase):
         pd.testing.assert_frame_equal(second.all_data, first.all_data)
         self.assertIn(('Energy', 'AAA'), second.all_data.columns)
 
+    def test_recommended_tickers_preserve_rank_order_without_duplicates(self):
+        from agent.providers.market.sp500 import SP500StockAnalyzer
+        result = object.__new__(SP500StockAnalyzer)
+        result.top_energy = result.bottom_energy = None
+        result.top_return = result.bottom_return = None
+        result._get_n_days_energy = lambda days: pd.DataFrame({
+            'Ticker': ['AAA', 'BBB', 'CCC'],
+            f'{days}D_Energy': [3, 2, 1],
+        })
+        result._get_n_days_return = lambda days: pd.DataFrame({
+            'Ticker': ['BBB', 'DDD', 'AAA'],
+            f'{days}D_Return': [0.3, 0.2, 0.1],
+        })
+
+        result.analyze_stocks(lookback_days=30, top_n=3)
+
+        self.assertEqual(['AAA', 'BBB', 'CCC', 'DDD'], result.get_recommanded_tickers())
+
 
 if __name__ == '__main__': unittest.main()

@@ -28,10 +28,12 @@ class Orchestrator:
     """Coordinate model-selected stock-analysis services and memory."""
 
     def __init__(self, model_provider, stock_service, memory_service, *, model: str,
-                 temperature: float = 0.1, registry=None, configuration_error: Optional[str] = None):
+                 temperature: float = 0.1, registry=None, configuration_error: Optional[str] = None,
+                 runtime=None):
         self.logger = get_logger("agent.orchestrator")
         self.model_provider = model_provider
         self.stock_service = stock_service
+        self.runtime = runtime
         self.memory_service = memory_service
         self.model = model
         self.temperature = temperature
@@ -40,7 +42,9 @@ class Orchestrator:
 
     @classmethod
     def from_settings(cls) -> "Orchestrator":
-        stock_service = StockAnalysisService(YFinanceMarketProvider(), HttpNewsProvider())
+        from agent.runtime import AgentRuntime
+        runtime = AgentRuntime()
+        stock_service = StockAnalysisService(YFinanceMarketProvider(runtime), HttpNewsProvider())
         memory_service = AnalysisMemoryService(
             FileSystemMemoryStore(settings.memory.directory),
             enabled=settings.memory.enabled,
@@ -53,7 +57,7 @@ class Orchestrator:
             provider = None
             error = str(exc)
         return cls(provider, stock_service, memory_service, model=settings.model.name,
-                   temperature=settings.model.temperature, configuration_error=error)
+                   temperature=settings.model.temperature, configuration_error=error, runtime=runtime)
 
     async def run(self, query: str, max_iterations: int = 10, progress_callback=None) -> dict:
         if self.configuration_error or self.model_provider is None:

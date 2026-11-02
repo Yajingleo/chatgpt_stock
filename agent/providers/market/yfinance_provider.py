@@ -1,12 +1,13 @@
 """yfinance-backed market data adapter."""
 
 from agent.config import settings
-from agent.providers.market.sp500 import SP500StockAnalyzer
 
 
 class YFinanceMarketProvider:
+    def __init__(self, runtime=None):
+        # Local import avoids a cycle through the market package exports.
+        from agent.runtime import AgentRuntime
+        self.runtime = runtime if runtime is not None else AgentRuntime()
+
     def momentum_tickers(self, lookback_days=None):
-        analyzer = SP500StockAnalyzer()
-        analyzer.analyze_stocks(lookback_days=lookback_days or settings.analysis.lookback_days)
-        tickers = analyzer.get_recommanded_tickers()
-        return list(tickers)
+        return self.runtime.momentum_tickers(lookback_days or settings.analysis.lookback_days)

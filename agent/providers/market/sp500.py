@@ -69,6 +69,14 @@ def parse_args():
         '--num_stocks_to_test', type=int, default=None,
         help='Limit number of stocks to test (for debugging)'
     )
+    parser.add_argument(
+        '--plot_tickers', nargs='+', default=[],
+        help='Tickers to save as K-line PNGs in output_dir (default: output/kline)'
+    )
+    parser.add_argument(
+        '--plot_days', type=int, default=60,
+        help='Number of most recent trading sessions per K-line chart (default: 60)'
+    )
 
     return parser.parse_args()
 
@@ -340,6 +348,8 @@ class SP500StockAnalyzer:
 
 
 if __name__ == '__main__':
+    from agent.plotting import KlinePlotter
+
     args = parse_args()
 
     # Create analyzer instance
@@ -358,6 +368,13 @@ if __name__ == '__main__':
         if not os.path.exists(args.output_dir):
             os.makedirs(args.output_dir)
         analyzer.save_to_csv(args.output_dir)
+
+    for ticker in args.plot_tickers:
+        # Use a filename-safe symbol while retaining the original for lookup.
+        filename = ''.join(c if c.isalnum() or c in '.-_' else '_' for c in ticker.upper())
+        path = os.path.join(args.output_dir or 'output/kline', f'{filename}_kline.png')
+        KlinePlotter().plot(analyzer.all_data, ticker, days=args.plot_days, output_path=path)
+        print(f'K-line chart saved to {path}')
 
     print(f"\nTop {args.top_n} {args.lookback_days}D Energy:\n", top_energy)
     print(f"\nBottom {args.top_n} {args.lookback_days}D Energy:\n", bottom_energy)

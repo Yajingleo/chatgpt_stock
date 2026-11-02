@@ -38,7 +38,7 @@ except ImportError:
 
 # Web server imports
 try:
-    from http.server import HTTPServer, BaseHTTPRequestHandler
+    from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
     from urllib.parse import urlparse, parse_qs, unquote
     import socket
     import socketserver
@@ -59,7 +59,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # Import modular components
-from web.utils import StreamingLogHandler
+from web.utils import StreamingLogHandler, RunCancelled, RunRegistry
 from web.models import ChatMessage, NaturalLanguageProcessor
 from web.templates import get_chat_html
 from web.formatters import (
@@ -79,10 +79,11 @@ MAX_HISTORY_TURNS = 10
 class StockChatHandler(BaseHTTPRequestHandler):
     """HTTP request handler for the chat interface"""
     
-    def __init__(self, *args, agent=None, nlp=None, chat_history=None, **kwargs):
+    def __init__(self, *args, agent=None, nlp=None, chat_history=None, runs=None, **kwargs):
         self.agent = agent
         self.nlp = nlp
         self.chat_history = chat_history or []
+        self.runs = runs
         super().__init__(*args, **kwargs)
     
     def do_GET(self):
@@ -108,6 +109,8 @@ class StockChatHandler(BaseHTTPRequestHandler):
             self._handle_chat_message()
         elif path == '/api/chat/stream':
             self._handle_chat_stream()
+        elif path == '/api/chat/stop':
+            self._handle_chat_stop()
         else:
             self._serve_404()
     
@@ -148,9 +151,21 @@ class StockChatHandler(BaseHTTPRequestHandler):
             logger.error(f"Error handling chat message: {e}")
             self._send_json_response({'error': 'Internal server error'}, 500)
 
+    def _handle_chat_stop(self):
+        """Stop an in-flight streamed query by run id"""
+        try:
+            content_length = int(self.headers['Content-Length'])
+            data = json.loads(self.rfile.read(content_length).decode('utf-8'))
+            stopped = self.runs.stop(data.get('run_id', ''))
+            self._send_json_response({'stopped': stopped})
+        except Exception as e:
+            logger.error(f"Error handling stop request: {e}")
+            self._send_json_response({'error': 'Invalid stop request'}, 400)
+
     def _handle_chat_stream(self):
         """Handle streaming chat messages with Server-Sent Events"""
         streaming_handler = None
+        control = None
         try:
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length)
@@ -172,6 +187,13 @@ class StockChatHandler(BaseHTTPRequestHandler):
             self.send_header('Connection', 'keep-alive')
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
+
+            # Tell the page which run to stop if the user clicks Stop
+            control = self.runs.start()
+            self.wfile.write(
+                f"data: {json.dumps({'type': 'run', 'run_id': control.run_id})}\n\n".encode('utf-8')
+            )
+            self.wfile.flush()
 
             # Helper to send SSE log events
             def send_log_event(log_message):
@@ -207,10 +229,13 @@ class StockChatHandler(BaseHTTPRequestHandler):
                     self.wfile.write(f"data: {event_data}\n\n".encode('utf-8'))
                     self.wfile.flush()
                 except Exception:
-                    pass
+                    # The browser went away, so nobody is waiting for the answer
+                    control.cancel()
 
             # Process the message with progress callback
-            response = asyncio.run(self._process_user_message(user_message, progress_callback=progress_callback))
+            response = control.execute(
+                lambda: self._process_user_message(user_message, progress_callback=progress_callback)
+            )
 
             # Add assistant response to history
             assistant_msg = ChatMessage('assistant', response)
@@ -226,6 +251,13 @@ class StockChatHandler(BaseHTTPRequestHandler):
             self.wfile.write(b"data: [DONE]\n\n")
             self.wfile.flush()
 
+        except RunCancelled:
+            logger.info("Query stopped by user")
+            try:
+                self.wfile.write(b'data: {"type": "stopped"}\n\ndata: [DONE]\n\n')
+                self.wfile.flush()
+            except Exception:
+                pass
         except Exception as e:
             logger.error(f"Error handling stream: {e}")
             try:
@@ -235,6 +267,8 @@ class StockChatHandler(BaseHTTPRequestHandler):
             except Exception:
                 pass
         finally:
+            if control:
+                self.runs.finish(control)
             # Clean up: remove the streaming handler
             if streaming_handler:
                 agent_logger = logging.getLogger('agent')
@@ -367,6 +401,7 @@ class ADKWebChatServer:
         self.agent = None
         self.nlp = NaturalLanguageProcessor()
         self.chat_history = []
+        self.runs = RunRegistry()
         
         # Initialize the provider-neutral stock orchestrator.
         if STOCK_AGENT_AVAILABLE:
@@ -380,10 +415,11 @@ class ADKWebChatServer:
         agent = self.agent
         nlp = self.nlp
         chat_history = self.chat_history
+        runs = self.runs
         
         class Handler(StockChatHandler):
             def __init__(self, *args, **kwargs):
-                super().__init__(*args, agent=agent, nlp=nlp, chat_history=chat_history, **kwargs)
+                super().__init__(*args, agent=agent, nlp=nlp, chat_history=chat_history, runs=runs, **kwargs)
         
         return Handler
     
@@ -414,7 +450,8 @@ class ADKWebChatServer:
         
         # Create server
         handler_class = self.create_handler_class()
-        server = HTTPServer((self.host, port), handler_class)
+        server = ThreadingHTTPServer((self.host, port), handler_class)
+        server.daemon_threads = True
         
         # Server info
         url = f"http://{self.host}:{port}"

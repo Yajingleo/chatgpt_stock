@@ -68,7 +68,6 @@ from web.formatters import (
     get_general_response,
     get_stock_news_message,
     get_sentiment_analysis_message,
-    get_market_overview_unavailable,
     format_recommendations
 )
 
@@ -208,7 +207,7 @@ class StockChatHandler(BaseHTTPRequestHandler):
                     pass
 
             # Process the message with progress callback
-            response = asyncio.run(self._process_user_message_with_progress(user_message, progress_callback))
+            response = asyncio.run(self._process_user_message(user_message, progress_callback=progress_callback))
 
             # Add assistant response to history
             assistant_msg = ChatMessage('assistant', response)
@@ -238,87 +237,7 @@ class StockChatHandler(BaseHTTPRequestHandler):
                 agent_logger = logging.getLogger('agent')
                 agent_logger.removeHandler(streaming_handler)
 
-    async def _process_user_message_with_progress(self, message: str, progress_callback) -> str:
-        """Process user message with progress updates"""
-        try:
-            # Route all queries through the provider-neutral orchestrator.
-            if not STOCK_AGENT_AVAILABLE:
-                return "❌ Stock analysis system is not available."
-
-            logger.info(f"Processing query with Orchestrator: {message}")
-
-            results = await self.agent.run(
-                message,
-                progress_callback=progress_callback
-            )
-
-            if not results.get('success'):
-                return f"❌ Analysis failed: {results.get('error', 'Unknown error')}"
-
-            # Return the agent's answer directly
-            return results.get('answer', 'No response generated')
-
-        except Exception as e:
-            logger.error(f"Error processing message with progress: {e}")
-            return f"I encountered an error: {str(e)}"
-
-    async def _get_recommendations_with_progress(self, progress_callback) -> str:
-        """Get stock recommendations with progress updates"""
-        if not STOCK_AGENT_AVAILABLE:
-            return "❌ Stock analysis system is not available."
-
-        try:
-            results = await self.agent.run(
-                "Provide investment recommendations based on current stock news sentiment",
-                progress_callback=progress_callback
-            )
-
-            if not results.get('success'):
-                return f"❌ Analysis failed: {results.get('error', 'Unknown error')}"
-
-            return self._format_recommendations(results)
-
-        except Exception as e:
-            return f"❌ Error getting recommendations: {str(e)}"
-
-    async def _analyze_stock_with_progress(self, ticker: str, progress_callback) -> str:
-        """Analyze specific stock with progress updates"""
-        if not STOCK_AGENT_AVAILABLE:
-            return f"❌ Stock analysis system is not available."
-
-        try:
-            progress_callback("init", f"Starting analysis for {ticker}...", f"Analyzing {ticker}")
-            query = f"Analyze {ticker} stock with recent news and sentiment analysis"
-            results = await self.agent.run(query, progress_callback=progress_callback)
-
-            if not results.get('success'):
-                return f"❌ Analysis failed for {ticker}: {results.get('error', 'Unknown error')}"
-
-            return f"🔍 **Analysis Results for {ticker}**\n\n" + self._format_recommendations(results)
-
-        except Exception as e:
-            return f"❌ Error analyzing {ticker}: {str(e)}"
-
-    async def _get_market_overview_with_progress(self, progress_callback) -> str:
-        """Get market overview with progress updates"""
-        if not STOCK_AGENT_AVAILABLE:
-            return "❌ Stock analysis system is not available."
-
-        try:
-            results = await self.agent.run(
-                "Provide market overview and investment recommendations",
-                progress_callback=progress_callback
-            )
-
-            if not results.get('success'):
-                return f"❌ Analysis failed: {results.get('error', 'Unknown error')}"
-
-            return "📊 **Market Overview**\n\n" + self._format_recommendations(results)
-
-        except Exception as e:
-            return f"❌ Error: {str(e)}"
-
-    async def _process_user_message(self, message: str) -> str:
+    async def _process_user_message(self, message: str, progress_callback=None) -> str:
         """Process user message and generate response"""
         try:
             # Special case: help requests
@@ -331,7 +250,8 @@ class StockChatHandler(BaseHTTPRequestHandler):
 
             logger.info(f"Processing query with Orchestrator: {message}")
 
-            results = await self.agent.run(message)
+            kwargs = {} if progress_callback is None else {"progress_callback": progress_callback}
+            results = await self.agent.run(message, **kwargs)
 
             if not results.get('success'):
                 return f"❌ Analysis failed: {results.get('error', 'Unknown error')}"
@@ -347,42 +267,6 @@ class StockChatHandler(BaseHTTPRequestHandler):
         """Generate help response - delegates to formatter"""
         return get_help_response()
     
-    async def _get_recommendations(self) -> str:
-        """Get stock recommendations"""
-        if not STOCK_AGENT_AVAILABLE:
-            return "❌ Stock analysis system is not available."
-        
-        try:
-            results = await self.agent.run(
-                "Provide investment recommendations based on current stock news sentiment"
-            )
-            
-            if not results.get('success'):
-                return f"❌ Analysis failed: {results.get('error', 'Unknown error')}"
-            
-            return self._format_recommendations(results)
-            
-        except Exception as e:
-            return f"❌ Error getting recommendations: {str(e)}"
-    
-    async def _analyze_specific_stock(self, ticker: str) -> str:
-        """Analyze a specific stock"""
-        if not STOCK_AGENT_AVAILABLE:
-            return f"❌ Stock analysis system is not available. I can provide general information about {ticker}, but cannot run detailed analysis."
-        
-        try:
-            # Create a targeted query for the specific stock
-            query = f"Analyze {ticker} stock with recent news and sentiment analysis"
-            results = await self.agent.run(query)
-            
-            if not results.get('success'):
-                return f"❌ Analysis failed for {ticker}: {results.get('error', 'Unknown error')}"
-            
-            return f"🔍 **Analysis Results for {ticker}**\n\n" + self._format_recommendations(results)
-            
-        except Exception as e:
-            return f"❌ Error analyzing {ticker}: {str(e)}"
-    
     async def _get_stock_news(self, ticker: str) -> str:
         """Get news for a specific stock - delegates to formatter"""
         return get_stock_news_message(ticker)
@@ -390,24 +274,6 @@ class StockChatHandler(BaseHTTPRequestHandler):
     async def _get_sentiment_analysis(self, ticker: str) -> str:
         """Get sentiment analysis for a specific stock - delegates to formatter"""
         return get_sentiment_analysis_message(ticker)
-
-    async def _get_market_overview(self) -> str:
-        """Get market overview"""
-        if not STOCK_AGENT_AVAILABLE:
-            return get_market_overview_unavailable()
-        
-        try:
-            results = await self.agent.run(
-                "Provide market overview and investment recommendations based on current conditions"
-            )
-            
-            if not results.get('success'):
-                return f"❌ Market analysis failed: {results.get('error', 'Unknown error')}"
-            
-            return "📊 **Market Overview**\n\n" + self._format_recommendations(results)
-            
-        except Exception as e:
-            return f"❌ Error getting market overview: {str(e)}"
 
     async def _analyze_multiple_stocks(self, tickers: List[str]) -> str:
         """Analyze multiple stocks"""

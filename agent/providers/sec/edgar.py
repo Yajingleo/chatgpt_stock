@@ -8,6 +8,31 @@ from datetime import datetime, timedelta
 from agent.config import settings
 from agent.utils import get_session_cache
 
+
+def _get_company_cik(ticker, headers, cache):
+    """Resolve an issuer ticker using the shared SEC lookup cache."""
+    try:
+        cache_key = {'kind': 'company_cik', 'ticker': ticker.upper()}
+        cached_cik = cache.get(cache_key) if settings.cache.enabled else None
+        if isinstance(cached_cik, str):
+            return cached_cik
+
+        url = "https://www.sec.gov/files/company_tickers.json"
+        response = requests.get(url, headers=headers)
+        companies = response.json()
+
+        for company_data in companies.values():
+            if company_data['ticker'] == ticker.upper():
+                cik = str(company_data['cik_str']).zfill(10)
+                if settings.cache.enabled:
+                    cache.set(cache_key, cik)
+                return cik
+        return None
+    except Exception as e:
+        print(f"Error getting CIK for {ticker}: {e}")
+        return None
+
+
 class SECFilingsAnalyzer:
     """Analyze SEC filings for major customer disclosures and insider trading"""
     
@@ -22,28 +47,8 @@ class SECFilingsAnalyzer:
         self._cache = get_session_cache('sec_filings', settings.cache.sec_filings_ttl)
     
     def get_company_cik(self, ticker):
-        """Get CIK (Central Index Key) for a company"""
-        try:
-            cache_key = {'kind': 'company_cik', 'ticker': ticker.upper()}
-            cached_cik = self._cache.get(cache_key) if settings.cache.enabled else None
-            if isinstance(cached_cik, str):
-                return cached_cik
+        return _get_company_cik(ticker, self.headers, self._cache)
 
-            url = f"https://www.sec.gov/files/company_tickers.json"
-            response = requests.get(url, headers=self.headers)
-            companies = response.json()
-            
-            for company_data in companies.values():
-                if company_data['ticker'] == ticker.upper():
-                    cik = str(company_data['cik_str']).zfill(10)
-                    if settings.cache.enabled:
-                        self._cache.set(cache_key, cik)
-                    return cik
-            return None
-        except Exception as e:
-            print(f"Error getting CIK for {ticker}: {e}")
-            return None
-    
     def get_latest_10k(self, cik):
         """Get the latest 10-K filing for a company"""
         try:
@@ -155,28 +160,8 @@ class InsiderTradingAnalyzer:
             print(f"Error getting insider trades for {ticker}: {e}")
             return pd.DataFrame()
 
-    def get_company_cik(self, ticker) -> str:
-        """Get CIK for company"""
-        try:
-            cache_key = {'kind': 'company_cik', 'ticker': ticker.upper()}
-            cached_cik = self._cache.get(cache_key) if settings.cache.enabled else None
-            if isinstance(cached_cik, str):
-                return cached_cik
-
-            url = f"https://www.sec.gov/files/company_tickers.json"
-            response = requests.get(url, headers=self.headers)
-            companies = response.json()
-            
-            for company_data in companies.values():
-                if company_data['ticker'] == ticker.upper():
-                    cik = str(company_data['cik_str']).zfill(10)
-                    if settings.cache.enabled:
-                        self._cache.set(cache_key, cik)
-                    return cik
-            return None
-        except Exception as e:
-            print(f"Error getting CIK for {ticker}: {e}")
-            return None
+    def get_company_cik(self, ticker):
+        return _get_company_cik(ticker, self.headers, self._cache)
 
 
 # Additional data sources you can use:

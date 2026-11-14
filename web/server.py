@@ -73,6 +73,9 @@ from web.formatters import (
 
 
 
+MAX_HISTORY_TURNS = 10
+
+
 class StockChatHandler(BaseHTTPRequestHandler):
     """HTTP request handler for the chat interface"""
     
@@ -237,6 +240,11 @@ class StockChatHandler(BaseHTTPRequestHandler):
                 agent_logger = logging.getLogger('agent')
                 agent_logger.removeHandler(streaming_handler)
 
+    def _prior_turns(self) -> list:
+        """Chat history before the current user message, for conversational context."""
+        turns = self.chat_history[:-1][-MAX_HISTORY_TURNS * 2:]
+        return [{"role": msg.role, "content": msg.content} for msg in turns]
+
     async def _process_user_message(self, message: str, progress_callback=None) -> str:
         """Process user message and generate response"""
         try:
@@ -251,7 +259,7 @@ class StockChatHandler(BaseHTTPRequestHandler):
             logger.info(f"Processing query with Orchestrator: {message}")
 
             kwargs = {} if progress_callback is None else {"progress_callback": progress_callback}
-            results = await self.agent.run(message, **kwargs)
+            results = await self.agent.run(message, history=self._prior_turns(), **kwargs)
 
             if not results.get('success'):
                 return f"❌ Analysis failed: {results.get('error', 'Unknown error')}"

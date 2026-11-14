@@ -19,12 +19,13 @@ class ToolCallingRunner:
         self.temperature = temperature
 
     async def run(self, query: str, system_prompt: str, max_iterations: int = 10,
-                  progress_callback: Optional[ProgressCallback] = None) -> Dict[str, Any]:
+                  progress_callback: Optional[ProgressCallback] = None,
+                  history: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
         context = AgentRunContext(query=query)
-        messages: List[Dict[str, Any]] = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": query},
-        ]
+        messages: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}]
+        if history:
+            messages.extend({"role": turn["role"], "content": turn["content"]} for turn in history)
+        messages.append({"role": "user", "content": query})
         for iteration in range(1, max_iterations + 1):
             try:
                 response = await self.provider.complete(messages, self.registry.schemas, self.model, self.temperature)

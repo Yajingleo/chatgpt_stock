@@ -59,11 +59,12 @@ class Orchestrator:
         return cls(provider, stock_service, memory_service, model=settings.model.name,
                    temperature=settings.model.temperature, configuration_error=error, runtime=runtime)
 
-    async def run(self, query: str, max_iterations: int = 10, progress_callback=None) -> dict:
+    async def run(self, query: str, max_iterations: int = 10, progress_callback=None,
+                  history: Optional[list] = None) -> dict:
         if self.configuration_error or self.model_provider is None:
             return {"success": False, "error": self.configuration_error or "Model provider unavailable",
                     "query": query}
         if not isinstance(query, str) or not query.strip():
             return {"success": False, "error": "A non-empty query is required", "query": query}
         runner = ToolCallingRunner(self.model_provider, self.model, self.registry, self.logger, self.temperature)
-        return await runner.run(query.strip(), SYSTEM_PROMPT, max_iterations, progress_callback)
+        return await runner.run(query.strip(), SYSTEM_PROMPT, max_iterations, progress_callback, history)

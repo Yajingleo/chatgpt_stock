@@ -115,6 +115,28 @@ class ToolCallingRunnerTest(unittest.TestCase):
         self.assertIsNot(contexts[0], contexts[1])
         self.assertEqual(["first", "second"], [context.query for context in contexts])
 
+    def test_prior_history_is_sent_before_the_new_query(self):
+        registry = ToolRegistry([
+            ToolDefinition("noop", "Noop", {"type": "object"}, lambda args, ctx: {})
+        ])
+        provider = FakeProvider([ModelResponse(content="30 days")])
+        runner = ToolCallingRunner(provider, "model", registry, logging.getLogger("test"))
+        history = [
+            {"role": "user", "content": "Analyze AAPL with a 30 day lookback"},
+            {"role": "assistant", "content": "Here is the 30-day analysis..."},
+        ]
+
+        asyncio.run(runner.run("What lookback_days did I just use?", "system", history=history))
+
+        sent = provider.requests[0]["messages"]
+        self.assertEqual(
+            ["system", "user", "assistant", "user"],
+            [message["role"] for message in sent],
+        )
+        self.assertEqual(history[0]["content"], sent[1]["content"])
+        self.assertEqual(history[1]["content"], sent[2]["content"])
+        self.assertEqual("What lookback_days did I just use?", sent[3]["content"])
+
 
 class OpenAIModelProviderTest(unittest.TestCase):
     def test_serializes_provider_neutral_tool_calls_for_openai(self):

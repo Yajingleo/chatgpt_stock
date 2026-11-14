@@ -12,6 +12,7 @@ class ChatProcessingTest(unittest.TestCase):
     def setUp(self):
         self.handler = object.__new__(server.StockChatHandler)
         self.handler.agent = SimpleNamespace(run=AsyncMock())
+        self.handler.chat_history = []
 
     def process(self, message, callback):
         with patch.object(server, 'STOCK_AGENT_AVAILABLE', True):
@@ -28,7 +29,7 @@ class ChatProcessingTest(unittest.TestCase):
         for callback in (None, lambda *args: None):
             self.assertEqual(self.process('Analyze QCOM', callback), 'Analysis')
             kwargs = {} if callback is None else {'progress_callback': callback}
-            self.handler.agent.run.assert_awaited_with('Analyze QCOM', **kwargs)
+            self.handler.agent.run.assert_awaited_with('Analyze QCOM', history=[], **kwargs)
 
     def test_failures_are_consistent_in_both_modes(self):
         for callback in (None, lambda *args: None):

@@ -365,14 +365,7 @@ def get_chat_html() -> str:
             showProgressPanel();
             clearLogs();
 
-            // Check if this is an analysis request (use streaming)
-            const isAnalysisRequest = /recommend|analyze|sentiment|market|overview/i.test(message);
-
-            if (isAnalysisRequest) {
-                await sendStreamingMessage(message);
-            } else {
-                await sendRegularMessage(message);
-            }
+            await sendStreamingMessage(message);
         }
 
         async function sendStreamingMessage(message) {
@@ -437,7 +430,9 @@ def get_chat_html() -> str:
         }
 
         function handleStreamEvent(event) {
-            if (event.type === 'log') {
+            if (event.type === 'dataframe') {
+                addDataframe(event.message, event.log);
+            } else if (event.type === 'log') {
                 // Real-time log from Python logger
                 addLog(event.log);
             } else if (event.type === 'run') {
@@ -482,6 +477,37 @@ def get_chat_html() -> str:
             }
         }
 
+        function addDataframe(title, data) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'message assistant';
+            wrapper.style.overflowX = 'auto';
+            const heading = document.createElement('strong');
+            heading.textContent = title.replaceAll('_', ' ');
+            wrapper.appendChild(heading);
+            const table = document.createElement('table');
+            table.style.borderCollapse = 'collapse';
+            const header = table.createTHead().insertRow();
+            for (const column of data.columns) {
+                const cell = document.createElement('th');
+                cell.textContent = column;
+                cell.style.padding = '8px';
+                header.appendChild(cell);
+            }
+            const body = table.createTBody();
+            for (const row of data.rows) {
+                const tr = body.insertRow();
+                for (const column of data.columns) {
+                    const cell = tr.insertCell();
+                    cell.textContent = row[column] == null ? '—' : row[column];
+                    cell.style.padding = '8px';
+                    cell.style.borderTop = '1px solid #ddd';
+                }
+            }
+            wrapper.appendChild(table);
+            chatMessages.appendChild(wrapper);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
         function addMessage(role, content) {
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${role}`;
@@ -516,7 +542,7 @@ def get_chat_html() -> str:
         }
 
         function hideProgressPanel() {
-            progressPanel.classList.remove('active');
+            progressStatus.textContent = 'Finished — logs retained below';
         }
 
         function updateProgress(step, message) {
@@ -539,10 +565,7 @@ def get_chat_html() -> str:
             entry.appendChild(timestamp);
             entry.appendChild(msg);
             logEntries.appendChild(entry);
-            // Keep only the latest 10 log entries, similar to `tail`
-            while (logEntries.children.length > 10) {
-                logEntries.removeChild(logEntries.firstChild);
-            }
+
             logEntries.scrollTop = logEntries.scrollHeight;
         }
 

@@ -1,5 +1,6 @@
 """Long-lived market data shared by an agent's analysis and plotting calls."""
 
+import json
 from datetime import date
 from threading import RLock
 from time import monotonic
@@ -34,6 +35,23 @@ class AgentRuntime:
                 self._loaded_at = monotonic()
                 self._loaded_date = date.today()
             return self._sp500
+
+    def momentum_analysis(self, lookback_days=None):
+        from agent.utils import get_logger
+        logger = get_logger("agent.runtime")
+        with self._lock:
+            logger.info("Starting S&P 500 analysis (%s days)", lookback_days or settings.analysis.lookback_days)
+            data = self.sp500
+            frames = data.analyze_stocks(lookback_days=lookback_days)
+            tables = {}
+            for name, frame in zip(("top_energy", "bottom_energy", "top_return", "bottom_return"), frames):
+                # pandas JSON normalizes timestamps, NaN and numpy scalar types.
+                tables[name] = {"columns": list(frame.columns),
+                                "rows": json.loads(frame.to_json(orient="records", date_format="iso"))}
+                logger.info("%s (%s rows):\n%s", name, len(frame), frame.to_string(index=False))
+            tickers = list(data.get_recommanded_tickers())
+            logger.info("S&P 500 analysis complete: %s selected tickers", len(tickers))
+            return {"tickers": tickers, "tables": tables}
 
     def momentum_tickers(self, lookback_days=None):
         with self._lock:

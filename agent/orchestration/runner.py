@@ -19,12 +19,19 @@ class ToolCallingRunner:
         self.temperature = temperature
 
     async def run(self, query: str, system_prompt: str, max_iterations: int = 10,
-                  progress_callback: Optional[ProgressCallback] = None,
-                  history: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
+                  progress_callback: Optional[ProgressCallback] = None, history=None) -> Dict[str, Any]:
+        if isinstance(max_iterations, bool) or not isinstance(max_iterations, int) or max_iterations < 1:
+            return {"success": False, "error": "max_iterations must be a positive integer", "query": query}
         context = AgentRunContext(query=query)
-        messages: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}]
-        if history:
-            messages.extend({"role": turn["role"], "content": turn["content"]} for turn in history)
+        messages: List[Dict[str, Any]] = [
+            {"role": "system", "content": system_prompt},
+        ]
+        # Only prior conversation text is accepted: callers cannot inject system
+        # instructions or incomplete tool exchanges through conversation history.
+        for message in list(history or [])[-20:]:
+            if (isinstance(message, dict) and message.get("role") in ("user", "assistant")
+                    and isinstance(message.get("content"), str)):
+                messages.append({"role": message["role"], "content": message["content"]})
         messages.append({"role": "user", "content": query})
         for iteration in range(1, max_iterations + 1):
             try:
@@ -55,6 +62,9 @@ class ToolCallingRunner:
                 except Exception as error:
                     self.logger.error("Tool %s failed: %s", call.name, error, exc_info=True)
                     result = {"success": False, "error": str(error)}
+                if progress_callback and result.get("success") and result.get("tables"):
+                    for name, table in result["tables"].items():
+                        progress_callback("dataframe", name, table)
                 messages.append({"role": "tool", "tool_call_id": call.id, "name": call.name,
                                  "content": json.dumps(self.registry.present(call.name, result), default=str)})
 

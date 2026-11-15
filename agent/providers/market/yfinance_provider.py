@@ -11,3 +11,10 @@ class YFinanceMarketProvider:
 
     def momentum_tickers(self, lookback_days=None):
         return self.runtime.momentum_tickers(lookback_days or settings.analysis.lookback_days)
+
+    def fundamentals(self, tickers):
+        from agent.providers.market.fundamentals import StockFundamentalData
+        return StockFundamentalData().get_multiple_stocks_info(tickers)
+
+    def momentum_analysis(self, lookback_days=None):
+        return self.runtime.momentum_analysis(lookback_days)

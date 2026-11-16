@@ -137,6 +137,15 @@ def get_chat_html() -> str:
             background: #ccc;
             cursor: not-allowed;
         }
+
+        .stop-button {
+            background: #dc2626;
+            display: none;
+        }
+
+        .stop-button:hover {
+            background: #b91c1c;
+        }
         
         .typing-indicator {
             display: none;
@@ -296,6 +305,7 @@ def get_chat_html() -> str:
                 maxlength="500"
             >
             <button id="sendButton" class="send-button">Send</button>
+            <button id="stopButton" class="send-button stop-button">Stop</button>
         </div>
     </div>
 
@@ -303,6 +313,8 @@ def get_chat_html() -> str:
         const chatMessages = document.getElementById('chatMessages');
         const chatInput = document.getElementById('chatInput');
         const sendButton = document.getElementById('sendButton');
+        const stopButton = document.getElementById('stopButton');
+        let currentRun = null;
         const typingIndicator = document.getElementById('typingIndicator');
         const typingText = document.getElementById('typingText');
         const progressPanel = document.getElementById('progressPanel');
@@ -321,6 +333,21 @@ def get_chat_html() -> str:
         });
 
         sendButton.addEventListener('click', sendMessage);
+        stopButton.addEventListener('click', stopMessage);
+
+        function stopMessage() {
+            if (!currentRun) return;
+            const run = currentRun;
+            run.stopped = true;
+            if (run.id) {
+                fetch('/api/chat/stop', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ run_id: run.id })
+                }).catch(() => {});
+            }
+            run.controller.abort();
+        }
 
         async function sendMessage() {
             const message = chatInput.value.trim();
@@ -349,13 +376,16 @@ def get_chat_html() -> str:
         }
 
         async function sendStreamingMessage(message) {
+            currentRun = { id: null, stopped: false, controller: new AbortController() };
+            stopButton.style.display = 'inline-block';
             try {
                 const response = await fetch('/api/chat/stream', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ message: message })
+                    body: JSON.stringify({ message: message }),
+                    signal: currentRun.controller.signal
                 });
 
                 const reader = response.body.getReader();
@@ -390,9 +420,15 @@ def get_chat_html() -> str:
                     }
                 }
             } catch (error) {
-                addMessage('assistant', 'Sorry, I couldn\\'t process your request. Please try again.');
-                console.error('Streaming error:', error);
+                if (currentRun && currentRun.stopped) {
+                    addMessage('assistant', '⏹ Stopped.');
+                } else {
+                    addMessage('assistant', 'Sorry, I couldn\\'t process your request. Please try again.');
+                    console.error('Streaming error:', error);
+                }
             } finally {
+                currentRun = null;
+                stopButton.style.display = 'none';
                 hideProgressPanel();
                 hideTypingIndicator();
                 sendButton.disabled = false;
@@ -404,6 +440,10 @@ def get_chat_html() -> str:
             if (event.type === 'log') {
                 // Real-time log from Python logger
                 addLog(event.log);
+            } else if (event.type === 'run') {
+                if (currentRun) currentRun.id = event.run_id;
+            } else if (event.type === 'stopped') {
+                addMessage('assistant', '⏹ Stopped.');
             } else if (event.type === 'progress') {
                 updateProgress(event.step, event.message);
                 addLog(event.log || event.message);

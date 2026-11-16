@@ -33,7 +33,13 @@ def _to_openai_messages(messages):
 
 
 class OpenAIModelProvider:
-    def __init__(self, api_key: Optional[str] = None, client: Any = None, base_url: Optional[str] = None):
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        client: Any = None,
+        base_url: Optional[str] = None,
+        timeout: float = 60.0,
+    ):
         if client is not None:
             self.client = client
             return
@@ -43,7 +49,7 @@ class OpenAIModelProvider:
             raise ProviderConfigurationError("The openai package is not installed") from error
         if not api_key:
             raise ProviderConfigurationError("OPENAI_API_KEY is required")
-        kwargs = {"api_key": api_key}
+        kwargs = {"api_key": api_key, "timeout": timeout}
         if base_url:
             kwargs["base_url"] = base_url
         self.client = OpenAI(**kwargs)

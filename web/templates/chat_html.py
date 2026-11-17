@@ -95,6 +95,28 @@ def get_chat_html() -> str:
             white-space: pre-wrap;
             line-height: 1.4;
         }
+
+        .dataframe-table {
+            border-collapse: collapse;
+            margin-top: 0.5rem;
+            width: 100%;
+        }
+
+        .dataframe-table th,
+        .dataframe-table td {
+            padding: 8px;
+            text-align: left;
+            white-space: nowrap;
+        }
+
+        .dataframe-table .numeric {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .dataframe-table td {
+            border-top: 1px solid #ddd;
+        }
         
         .input-container {
             background: rgba(255, 255, 255, 0.95);
@@ -241,6 +263,13 @@ def get_chat_html() -> str:
 
         .log-entry .message {
             color: #aaa;
+            display: block;
+            margin: 0;
+            padding: 0;
+            max-width: 100%;
+            white-space: pre;
+            overflow-x: auto;
+            overflow-wrap: normal;
         }
 
         .welcome-message {
@@ -485,12 +514,16 @@ def get_chat_html() -> str:
             heading.textContent = title.replaceAll('_', ' ');
             wrapper.appendChild(heading);
             const table = document.createElement('table');
-            table.style.borderCollapse = 'collapse';
+            table.className = 'dataframe-table';
+            const numericColumns = new Set(data.columns.filter(column => {
+                const values = data.rows.map(row => row[column]).filter(value => value != null);
+                return values.length > 0 && values.every(value => typeof value === 'number');
+            }));
             const header = table.createTHead().insertRow();
             for (const column of data.columns) {
                 const cell = document.createElement('th');
                 cell.textContent = column;
-                cell.style.padding = '8px';
+                if (numericColumns.has(column)) cell.className = 'numeric';
                 header.appendChild(cell);
             }
             const body = table.createTBody();
@@ -499,8 +532,7 @@ def get_chat_html() -> str:
                 for (const column of data.columns) {
                     const cell = tr.insertCell();
                     cell.textContent = row[column] == null ? '—' : row[column];
-                    cell.style.padding = '8px';
-                    cell.style.borderTop = '1px solid #ddd';
+                    if (numericColumns.has(column)) cell.className = 'numeric';
                 }
             }
             wrapper.appendChild(table);

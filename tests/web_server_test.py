@@ -18,17 +18,18 @@ class ChatProcessingTest(unittest.TestCase):
         with patch.object(server, 'STOCK_AGENT_AVAILABLE', True):
             return asyncio.run(self.handler._process_user_message(message, callback))
 
-    def test_help_is_local_in_both_modes(self):
+    def test_help_reaches_the_agent_in_both_modes(self):
+        self.handler.agent.run.return_value = {'success': True, 'answer': 'Capabilities'}
         for callback in (None, lambda *args: None):
             for message in ('help', '/help', '?'):
-                self.assertEqual(self.process(message, callback), server.get_help_response())
-        self.handler.agent.run.assert_not_called()
+                self.assertEqual(self.process(message, callback), 'Capabilities')
+                self.handler.agent.run.assert_awaited_with(message, history=[], progress_callback=callback)
 
     def test_answer_and_callback_in_both_modes(self):
         self.handler.agent.run.return_value = {'success': True, 'answer': 'Analysis'}
         for callback in (None, lambda *args: None):
             self.assertEqual(self.process('Analyze QCOM', callback), 'Analysis')
-            kwargs = {} if callback is None else {'progress_callback': callback}
+            kwargs = {'progress_callback': callback}
             self.handler.agent.run.assert_awaited_with('Analyze QCOM', history=[], **kwargs)
 
     def test_failures_are_consistent_in_both_modes(self):

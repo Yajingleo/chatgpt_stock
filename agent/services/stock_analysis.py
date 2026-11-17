@@ -14,8 +14,8 @@ class StockAnalysisService:
 
     def momentum(self, lookback_days: Optional[int] = None) -> Dict[str, Any]:
         try:
-            tickers = self.market_provider.momentum_tickers(lookback_days or settings.analysis.lookback_days)
-            return {"success": True, "tickers": tickers, "count": len(tickers)}
+            analysis = self.market_provider.momentum_analysis(lookback_days or settings.analysis.lookback_days)
+            return {"success": True, **analysis, "count": len(analysis["tickers"])}
         except Exception as error:
             return {"success": False, "error": str(error)}
 
@@ -27,3 +27,10 @@ class StockAnalysisService:
 
     def recommendations(self, sentiment_data: Dict[str, Any]) -> Dict[str, Any]:
         return generate_recommendations_tool(sentiment_data)
+
+    def fundamentals(self, tickers: List[str]) -> Dict[str, Any]:
+        try:
+            stocks = self.market_provider.fundamentals(tickers)
+            return {"success": any(not item.get("error") for item in stocks), "stocks": stocks}
+        except Exception as error:
+            return {"success": False, "error": str(error)}

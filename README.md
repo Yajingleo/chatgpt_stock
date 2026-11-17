@@ -164,13 +164,38 @@ print(results["answer"] if results["success"] else results["error"])
 - "What's the sentiment on Tesla?"
 - "How is the market doing today?"
 
-## Workflow
+## Tool organization
 
-1. **Stock Selection**: Traditional momentum-based selection from candidate pools
-2. **News Crawling**: Automated web crawler for top performers
-3. **Sentiment Analysis**: LLM-powered analysis with keyword fallback
-4. **Recommendations**: BUY/SELL/HOLD with confidence levels and reasoning
-5. **Report Generation**: Stock, Action, Sentiment Score, Confidence, Reasoning
+All model-callable tool definitions live in `agent/tools/`. Each module keeps
+its model description, argument schema, handler, and result presenter together:
+
+- `market.py`: S&P 500 analysis and company fundamentals
+- `news.py`: news retrieval
+- `sentiment.py`: news sentiment analysis
+- `recommendations.py`: research signals
+- `memory.py`: saved analysis search, retrieval, and persistence helper
+- `registry.py`: shared registration and dispatch machinery
+- `stock_tools.py`: assembles the modules into the agent's registry
+
+To add a capability, define a tool in the relevant module and include it in that
+module's factory. Services hold the analysis logic; providers handle external
+data access. The model sees the tools assembled by `stock_tools.py`.
+
+## Agent behavior
+
+Every chat request goes to the model/tool loop. The model chooses its next tool
+from the request and observed results, rather than a keyword router. It can answer
+without tools, ask for clarification, compare company fundamentals, fetch news,
+analyze sentiment, discover momentum stocks, or recall saved research. News is
+required only for sentiment, and sentiment only for generated research signals.
+Tool errors return to the model so it can revise its approach, within the run's
+iteration limit.
+
+Both web endpoints supply the latest 20 conversation messages for follow-ups.
+The local web server currently shares one conversation across browser clients;
+use it as a single-user application. Programmatic callers can pass prior turns
+explicitly with `agent.run(query, history=[{"role": "user", "content": "..."}])`.
+Each invocation has fresh tool state and fetches its own evidence.
 
 ## Configuration
 

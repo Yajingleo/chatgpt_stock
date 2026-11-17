@@ -60,29 +60,17 @@ logger = logging.getLogger(__name__)
 
 # Import modular components
 from web.utils import StreamingLogHandler, RunCancelled, RunRegistry
-from web.models import ChatMessage, NaturalLanguageProcessor
+from web.models import ChatMessage
 from web.templates import get_chat_html
-from web.formatters import (
-    get_help_response,
-    get_portfolio_response,
-    get_general_response,
-    get_stock_news_message,
-    get_sentiment_analysis_message,
-    format_recommendations
-)
 
-
-
-MAX_HISTORY_TURNS = 10
 
 
 class StockChatHandler(BaseHTTPRequestHandler):
     """HTTP request handler for the chat interface"""
     
-    def __init__(self, *args, agent=None, nlp=None, chat_history=None, runs=None, **kwargs):
+    def __init__(self, *args, agent=None, chat_history=None, runs=None, **kwargs):
         self.agent = agent
-        self.nlp = nlp
-        self.chat_history = chat_history or []
+        self.chat_history = chat_history if chat_history is not None else []
         self.runs = runs
         super().__init__(*args, **kwargs)
     
@@ -219,7 +207,7 @@ class StockChatHandler(BaseHTTPRequestHandler):
             # Progress callback for status updates
             def progress_callback(step, message, log=None):
                 event_data = json.dumps({
-                    'type': 'progress',
+                    'type': 'dataframe' if step == 'dataframe' else 'progress',
                     'step': step,
                     'message': message,
                     'log': log or message,
@@ -234,7 +222,7 @@ class StockChatHandler(BaseHTTPRequestHandler):
 
             # Process the message with progress callback
             response = control.execute(
-                lambda: self._process_user_message(user_message, progress_callback=progress_callback)
+                lambda: self._process_user_message_with_progress(user_message, progress_callback)
             )
 
             # Add assistant response to history
@@ -274,26 +262,20 @@ class StockChatHandler(BaseHTTPRequestHandler):
                 agent_logger = logging.getLogger('agent')
                 agent_logger.removeHandler(streaming_handler)
 
-    def _prior_turns(self) -> list:
-        """Chat history before the current user message, for conversational context."""
-        turns = self.chat_history[:-1][-MAX_HISTORY_TURNS * 2:]
-        return [{"role": msg.role, "content": msg.content} for msg in turns]
-
-    async def _process_user_message(self, message: str, progress_callback=None) -> str:
-        """Process user message and generate response"""
+    async def _process_user_message_with_progress(self, message: str, progress_callback) -> str:
+        """Process user message with progress updates"""
         try:
-            # Special case: help requests
-            if message.lower().strip() in ['help', '/help', '?']:
-                return self._get_help_response()
-
-            # Route all other queries through the provider-neutral orchestrator.
+            # Route all queries through the provider-neutral orchestrator.
             if not STOCK_AGENT_AVAILABLE:
                 return "❌ Stock analysis system is not available."
 
             logger.info(f"Processing query with Orchestrator: {message}")
 
-            kwargs = {} if progress_callback is None else {"progress_callback": progress_callback}
-            results = await self.agent.run(message, history=self._prior_turns(), **kwargs)
+            results = await self.agent.run(
+                message,
+                progress_callback=progress_callback,
+                history=self._conversation_history(message),
+            )
 
             if not results.get('success'):
                 return f"❌ Analysis failed: {results.get('error', 'Unknown error')}"
@@ -302,52 +284,20 @@ class StockChatHandler(BaseHTTPRequestHandler):
             return results.get('answer', 'No response generated')
 
         except Exception as e:
-            logger.error(f"Error processing message: {e}")
-            return f"I encountered an error while processing your request: {str(e)}"
-    
-    def _get_help_response(self) -> str:
-        """Generate help response - delegates to formatter"""
-        return get_help_response()
-    
-    async def _get_stock_news(self, ticker: str) -> str:
-        """Get news for a specific stock - delegates to formatter"""
-        return get_stock_news_message(ticker)
-    
-    async def _get_sentiment_analysis(self, ticker: str) -> str:
-        """Get sentiment analysis for a specific stock - delegates to formatter"""
-        return get_sentiment_analysis_message(ticker)
+            logger.error(f"Error processing message with progress: {e}")
+            return f"I encountered an error: {str(e)}"
 
-    async def _analyze_multiple_stocks(self, tickers: List[str]) -> str:
-        """Analyze multiple stocks"""
-        if not STOCK_AGENT_AVAILABLE:
-            ticker_list = ", ".join(tickers[:5])
-            return f"❌ Stock analysis system is not available. Cannot analyze {ticker_list} at the moment."
-        
-        try:
-            ticker_list = ", ".join(tickers[:5])  # Limit to 5 tickers
-            query = f"Compare and analyze these stocks: {ticker_list}"
-            results = await self.agent.run(query)
-            
-            if not results.get('success'):
-                return f"❌ Analysis failed for {ticker_list}: {results.get('error', 'Unknown error')}"
-            
-            return f"🔍 **Comparative Analysis: {ticker_list}**\n\n" + self._format_recommendations(results)
-            
-        except Exception as e:
-            return f"❌ Error analyzing stocks: {str(e)}"
-    
-    def _get_portfolio_response(self) -> str:
-        """Get portfolio-related response - delegates to formatter"""
-        return get_portfolio_response()
-    
-    def _get_general_response(self, message: str, intent: str, entities: Dict[str, Any]) -> str:
-        """Handle general queries without running stock analysis - delegates to formatter"""
-        return get_general_response(message, intent, entities)
-    
-    def _format_recommendations(self, results: Dict[str, Any]) -> str:
-        """Format analysis results for chat display - delegates to formatter"""
-        return format_recommendations(results)
-    
+    def _conversation_history(self, message):
+        """Snapshot prior turns; the HTTP handlers already appended this request."""
+        history = list(self.chat_history)
+        if history and history[-1].role == 'user' and history[-1].content == message:
+            history.pop()
+        return [{"role": item.role, "content": item.content} for item in history[-20:]]
+
+    async def _process_user_message(self, message: str, progress_callback=None) -> str:
+        """Use the same model-selected tools for streamed and ordinary requests."""
+        return await self._process_user_message_with_progress(message, progress_callback)
+
     def _serve_chat_history(self):
         """Serve chat history as JSON"""
         history = [msg.to_dict() for msg in self.chat_history[-20:]]  # Last 20 messages
@@ -399,7 +349,6 @@ class ADKWebChatServer:
         self.host = host
         self.port = port
         self.agent = None
-        self.nlp = NaturalLanguageProcessor()
         self.chat_history = []
         self.runs = RunRegistry()
         
@@ -413,13 +362,12 @@ class ADKWebChatServer:
     def create_handler_class(self):
         """Create a handler class with injected dependencies"""
         agent = self.agent
-        nlp = self.nlp
         chat_history = self.chat_history
         runs = self.runs
         
         class Handler(StockChatHandler):
             def __init__(self, *args, **kwargs):
-                super().__init__(*args, agent=agent, nlp=nlp, chat_history=chat_history, runs=runs, **kwargs)
+                super().__init__(*args, agent=agent, chat_history=chat_history, runs=runs, **kwargs)
         
         return Handler
     
